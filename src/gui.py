@@ -1,6 +1,26 @@
 import os
-import tkinter as tk
-from tkinter import ttk, filedialog, messagebox
+import time
+from PySide6.QtWidgets import (
+    QMainWindow,
+    QWidget,
+    QVBoxLayout,
+    QHBoxLayout,
+    QGridLayout,
+    QLabel,
+    QLineEdit,
+    QPushButton,
+    QComboBox,
+    QFileDialog,
+    QMessageBox,
+    QScrollArea,
+    QFrame,
+    QMenuBar,
+    QMenu,
+    QSizePolicy,
+    QApplication,
+)
+from PySide6.QtCore import QTimer, Qt
+from PySide6.QtGui import QAction, QFontMetrics, QWheelEvent
 from script_manager import ScriptManager
 import utils
 from utils import run_script_in_gitbash, kill_script_process, get_process_tree_after_spawn
@@ -13,43 +33,250 @@ from config import (
     save_venv_activate_path,
     load_script_categories,
     save_script_category,
+    load_favorites,
+    toggle_favorite,
 )
+from metrics import collect_metrics, format_elapsed, format_cpu_time, PLACEHOLDER
 
-class ShScriptHubApp:
-    def __init__(self, master):
-        self.master = master
-        self._update_title()
-        self.master.geometry("900x520")
-        self.master.minsize(520, 360)
+CELL_PAD = 12
+CATEGORY_OPTIONS = ("None", "backend", "frontend")
+
+
+class NoWheelComboBox(QComboBox):
+    """QComboBox que ignora o scroll do mouse para evitar troca acidental de opção."""
+
+    def wheelEvent(self, event: QWheelEvent) -> None:
+        event.ignore()
+
+BG_MAIN = "#f0f2f5"
+BG_CARD = "#ffffff"
+BORDER = "#e5e7eb"
+
+APP_STYLESHEET = f"""
+QApplication, QMainWindow, QWidget, QScrollArea {{
+    font-family: "Segoe UI", sans-serif;
+    font-size: 9pt;
+    background-color: {BG_MAIN};
+    color: #1f2937;
+}}
+QMenuBar {{
+    background-color: {BG_MAIN};
+    padding: 4px 0;
+    border-bottom: 1px solid {BORDER};
+}}
+QMenuBar::item {{
+    padding: 8px 14px;
+    background-color: transparent;
+    border-radius: 4px;
+}}
+QMenuBar::item:selected {{
+    background-color: #e5e7eb;
+}}
+QMenu {{
+    background-color: {BG_CARD};
+    padding: 3px 0;
+    border: 1px solid {BORDER};
+    border-radius: 6px;
+}}
+QMenu::item {{
+    padding: 5px 12px;
+}}
+QMenu::item:selected {{
+    background-color: #f3f4f6;
+}}
+QLabel {{
+    color: #374151;
+}}
+QPushButton {{
+    min-width: 56px;
+    padding: 8px 14px;
+    border-radius: 6px;
+    font-weight: 500;
+}}
+QPushButton#runBtn, QFrame#scriptCard QPushButton#runBtn {{
+    background-color: #15803d;
+    color: #ffffff;
+    border: none;
+}}
+QPushButton#runBtn:hover, QFrame#scriptCard QPushButton#runBtn:hover {{
+    background-color: #166534;
+    color: #ffffff;
+}}
+QPushButton#runBtn:pressed, QFrame#scriptCard QPushButton#runBtn:pressed {{
+    background-color: #14532d;
+    color: #ffffff;
+}}
+QPushButton#killBtn, QFrame#scriptCard QPushButton#killBtn {{
+    background-color: #b91c1c;
+    color: #ffffff;
+    border: none;
+}}
+QPushButton#killBtn:hover, QFrame#scriptCard QPushButton#killBtn:hover {{
+    background-color: #991b1b;
+    color: #ffffff;
+}}
+QPushButton#killBtn:pressed, QFrame#scriptCard QPushButton#killBtn:pressed {{
+    background-color: #7f1d1d;
+    color: #ffffff;
+}}
+QComboBox {{
+    min-width: 100px;
+    padding: 6px 10px;
+    border: 1px solid {BORDER};
+    border-radius: 6px;
+    background-color: {BG_CARD};
+}}
+QComboBox:hover {{
+    border-color: #9ca3af;
+}}
+QComboBox::drop-down {{
+    border: none;
+    width: 20px;
+}}
+QScrollArea {{
+    border: none;
+    background-color: {BG_MAIN};
+}}
+QScrollBar:vertical {{
+    background: {BG_MAIN};
+    width: 10px;
+    border-radius: 5px;
+    margin: 0;
+}}
+QScrollBar::handle:vertical {{
+    background: #9ca3af;
+    border-radius: 5px;
+    min-height: 30px;
+}}
+QScrollBar::handle:vertical:hover {{
+    background: #6b7280;
+}}
+QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {{
+    height: 0;
+    background: {BG_MAIN};
+}}
+QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical {{
+    background: {BG_MAIN};
+}}
+QScrollBar:horizontal {{
+    background: {BG_MAIN};
+    height: 10px;
+    border-radius: 5px;
+    margin: 0;
+}}
+QScrollBar::handle:horizontal {{
+    background: #9ca3af;
+    border-radius: 5px;
+    min-width: 30px;
+}}
+QScrollBar::handle:horizontal:hover {{
+    background: #6b7280;
+}}
+QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal {{
+    width: 0;
+}}
+QScrollBar::add-page:horizontal, QScrollBar::sub-page:horizontal {{
+    background: {BG_MAIN};
+}}
+QFrame#scriptCard {{
+    background-color: {BG_CARD};
+    border: 1px solid {BORDER};
+    border-radius: 10px;
+}}
+QFrame#scriptCard QLabel, QFrame#scriptCard QComboBox {{
+    background-color: transparent;
+}}
+"""
+
+
+class ShScriptHubApp(QMainWindow):
+    def __init__(self):
+        super().__init__()
         self.script_manager = None
         self.scripts = []
         self.terminal_path = load_terminal_path()
         self.venv_activate_path = load_venv_activate_path()
         self.project_path = None
-
-        self._setup_styles()
-
-        self._build_menubar(master)
-
-        self.frame = ttk.Frame(master, padding=16)
-        self.frame.pack(fill="both", expand=True)
-
-        top_frame = ttk.Frame(self.frame)
-        top_frame.pack(fill="x", pady=(0, 16))
-        self.terminal_label = ttk.Label(top_frame, text="Terminal path: —")
-        self.terminal_label.pack(anchor="w", fill="x")
-        self.venv_label = ttk.Label(top_frame, text="Venv activate: Auto")
-        self.venv_label.pack(anchor="w", fill="x")
-        self.project_label = ttk.Label(top_frame, text="Project path: —")
-        self.project_label.pack(anchor="w", fill="x", expand=True)
-        self._update_path_labels()
-
-        ttk.Separator(self.frame, orient="horizontal").pack(fill="x", pady=(0, 12))
-
-        self.scripts_frame = ttk.Frame(self.frame)
-        self.scripts_frame.pack(fill="both", expand=True)
-
         self.script_rows = []
+
+        self._update_title()
+        self._build_menubar()
+        central = QWidget()
+        self.setCentralWidget(central)
+        layout = QVBoxLayout(central)
+        layout.setContentsMargins(16, 16, 16, 16)
+        layout.setSpacing(0)
+
+        top_frame = QWidget()
+        top_layout = QVBoxLayout(top_frame)
+        top_layout.setContentsMargins(0, 0, 0, 0)
+        top_layout.setSpacing(4)
+        self.terminal_label = QLabel("Terminal path: —")
+        self.venv_label = QLabel("Venv activate: Auto")
+        self.project_label = QLabel("Project path: —")
+        top_layout.addWidget(self.terminal_label)
+        top_layout.addWidget(self.venv_label)
+        top_layout.addWidget(self.project_label)
+        layout.addWidget(top_frame)
+        layout.addSpacing(16)
+
+        sep = QFrame()
+        sep.setFrameShape(QFrame.HLine)
+        sep.setStyleSheet("background-color: #e5e7eb; max-height: 1px;")
+        layout.addWidget(sep)
+        layout.addSpacing(12)
+
+        self.scroll_area = QScrollArea()
+        self.scroll_area.setWidgetResizable(True)
+        self.scroll_area.setHorizontalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        self.scroll_area.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        self.scroll_area.setFrameShape(QFrame.NoFrame)
+        vp = self.scroll_area.viewport()
+        vp.setAutoFillBackground(True)
+        vp.setStyleSheet(f"background-color: {BG_MAIN};")
+        self.scripts_container = QWidget()
+        self.scripts_container.setStyleSheet(f"background-color: {BG_MAIN};")
+        self.scripts_layout = QVBoxLayout(self.scripts_container)
+        self.scripts_layout.setContentsMargins(0, 0, 0, 0)
+        self.scripts_layout.setAlignment(Qt.AlignTop)
+        self.scroll_area.setWidget(self.scripts_container)
+
+        self.search_edit = QLineEdit()
+        self.search_edit.setPlaceholderText("Pesquisar por pasta ou nome do arquivo...")
+        self.search_edit.setClearButtonEnabled(True)
+        self.search_edit.setStyleSheet(f"""
+            QLineEdit {{
+                padding: 10px 14px;
+                border: 1px solid {BORDER};
+                border-radius: 8px;
+                background-color: {BG_CARD};
+                min-height: 20px;
+            }}
+        """)
+        self.folder_combo = NoWheelComboBox()
+        self.folder_combo.setMinimumWidth(140)
+        self.folder_combo.addItem("All")
+        self.folder_combo.setStyleSheet(f"""
+            QComboBox {{
+                padding: 8px 12px;
+                border: 1px solid {BORDER};
+                border-radius: 8px;
+                background-color: {BG_CARD};
+            }}
+        """)
+        search_row = QHBoxLayout()
+        search_row.setSpacing(10)
+        search_row.addWidget(self.search_edit, 1)
+        search_row.addWidget(QLabel("Pasta:"))
+        search_row.addWidget(self.folder_combo, 0)
+        layout.addLayout(search_row)
+        layout.addSpacing(8)
+        layout.addWidget(self.scroll_area, 1)
+
+        self.search_edit.textChanged.connect(self._on_search_changed)
+        self.folder_combo.currentTextChanged.connect(self._on_folder_changed)
+
+        self._update_path_labels()
         saved = load_project_path()
         if saved and os.path.isdir(saved):
             self.project_path = saved
@@ -59,90 +286,90 @@ class ShScriptHubApp:
             self.project_path = None
         self._update_path_labels()
 
-        self.master.after(1000, self._tick_process_check)
-        self.master.after(100, self._ensure_terminal_path)
+        self._tick_timer = QTimer(self)
+        self._tick_timer.timeout.connect(self._tick_process_check)
+        self._tick_timer.start(1000)
+        QTimer.singleShot(100, self._ensure_terminal_path)
 
-    def _build_menubar(self, master):
-        bar_bg = "#f0f0f0"
-        bar_hover_bg = "#e5e5e5"
-        menubar_frame = tk.Frame(master, bg=bar_bg, height=28)
-        menubar_frame.pack(side="top", fill="x")
-        menubar_frame.pack_propagate(False)
-        menu_style = {"tearoff": 0, "bg": bar_bg, "fg": "#333333", "activebackground": bar_hover_bg, "activeforeground": "#333333"}
+    def _menu_width_from_actions(self, menu: QMenu) -> None:
+        fm = QFontMetrics(menu.font())
+        w = max(fm.horizontalAdvance(act.text()) for act in menu.actions()) if menu.actions() else 0
+        menu.setMinimumWidth(w + 28)
 
-        project_menu = tk.Menu(menubar_frame, **menu_style)
-        project_menu.add_command(label="Set project path", command=self.select_project)
-        project_menu.add_command(label="Refresh", command=self._refresh_scripts)
-        project_lbl = tk.Label(menubar_frame, text="Project", bg=bar_bg, fg="#333333", font=("Segoe UI", 9), padx=10, pady=4, cursor="hand2")
-        project_lbl.pack(side="left")
-        project_lbl.bind("<Button-1>", lambda e: self._show_popup_menu(project_lbl, project_menu))
-        project_lbl.bind("<Enter>", lambda e: project_lbl.configure(bg=bar_hover_bg))
-        project_lbl.bind("<Leave>", lambda e: project_lbl.configure(bg=bar_bg))
+    def _build_menubar(self):
+        menubar = self.menuBar()
+        project_menu = menubar.addMenu("Project")
+        act = QAction("Set project path", self)
+        act.triggered.connect(self.select_project)
+        project_menu.addAction(act)
+        act = QAction("Refresh", self)
+        act.triggered.connect(self._refresh_scripts)
+        project_menu.addAction(act)
+        self._menu_width_from_actions(project_menu)
 
-        terminal_menu = tk.Menu(menubar_frame, **menu_style)
-        terminal_menu.add_command(label="Set terminal path", command=self._choose_terminal_path)
-        terminal_lbl = tk.Label(menubar_frame, text="Terminal", bg=bar_bg, fg="#333333", font=("Segoe UI", 9), padx=10, pady=4, cursor="hand2")
-        terminal_lbl.pack(side="left")
-        terminal_lbl.bind("<Button-1>", lambda e: self._show_popup_menu(terminal_lbl, terminal_menu))
-        terminal_lbl.bind("<Enter>", lambda e: terminal_lbl.configure(bg=bar_hover_bg))
-        terminal_lbl.bind("<Leave>", lambda e: terminal_lbl.configure(bg=bar_bg))
+        terminal_menu = menubar.addMenu("Terminal")
+        act = QAction("Set terminal path", self)
+        act.triggered.connect(self._choose_terminal_path)
+        terminal_menu.addAction(act)
+        self._menu_width_from_actions(terminal_menu)
 
-        venv_menu = tk.Menu(menubar_frame, **menu_style)
-        venv_menu.add_command(label="Set venv activate path", command=self._choose_venv_activate_path)
-        venv_menu.add_command(label="Clear venv path", command=self._clear_venv_activate_path)
-        venv_lbl = tk.Label(menubar_frame, text="Venv", bg=bar_bg, fg="#333333", font=("Segoe UI", 9), padx=10, pady=4, cursor="hand2")
-        venv_lbl.pack(side="left")
-        venv_lbl.bind("<Button-1>", lambda e: self._show_popup_menu(venv_lbl, venv_menu))
-        venv_lbl.bind("<Enter>", lambda e: venv_lbl.configure(bg=bar_hover_bg))
-        venv_lbl.bind("<Leave>", lambda e: venv_lbl.configure(bg=bar_bg))
-
-    def _show_popup_menu(self, widget, menu):
-        menu.tk_popup(widget.winfo_rootx(), widget.winfo_rooty() + widget.winfo_height())
+        venv_menu = menubar.addMenu("Venv")
+        act = QAction("Set venv activate path", self)
+        act.triggered.connect(self._choose_venv_activate_path)
+        venv_menu.addAction(act)
+        act = QAction("Clear venv path", self)
+        act.triggered.connect(self._clear_venv_activate_path)
+        venv_menu.addAction(act)
+        self._menu_width_from_actions(venv_menu)
 
     def _update_path_labels(self):
-        self.terminal_label.config(text=f"Terminal path: {self.terminal_path or '—'}")
-        self.venv_label.config(text=f"Venv activate: {self.venv_activate_path or 'Auto'}")
-        self.project_label.config(text=f"Project path: {self.project_path or '—'}")
+        self.terminal_label.setText(f"Terminal path: {self.terminal_path or '—'}")
+        self.venv_label.setText(f"Venv activate: {self.venv_activate_path or 'Auto'}")
+        self.project_label.setText(f"Project path: {self.project_path or '—'}")
 
     def _choose_terminal_path(self):
-        messagebox.showinfo(
+        QMessageBox.information(
+            self,
             "ShScriptHub",
             "Select the terminal executable (.exe), e.g. Git Bash.",
         )
         title = "Select terminal executable"
         if os.name == "nt":
-            path = filedialog.askopenfilename(
-                title=title,
-                filetypes=[("Executable", "*.exe"), ("All files", "*.*")],
-                initialdir=os.environ.get("ProgramFiles", "/"),
+            path, _ = QFileDialog.getOpenFileName(
+                self,
+                title,
+                os.environ.get("ProgramFiles", "/"),
+                "Executable (*.exe);;All files (*.*)",
             )
         else:
-            path = filedialog.askopenfilename(title=title)
+            path, _ = QFileDialog.getOpenFileName(self, title)
         if path and os.path.isfile(path):
             save_terminal_path(path)
             self.terminal_path = path
             self._update_path_labels()
-            messagebox.showinfo("ShScriptHub", "Terminal path saved.")
+            QMessageBox.information(self, "ShScriptHub", "Terminal path saved.")
 
     def _choose_venv_activate_path(self):
-        messagebox.showinfo(
+        QMessageBox.information(
+            self,
             "ShScriptHub",
             "Select the venv activate script (e.g. backend\\.venv\\Scripts\\activate). Used for backend scripts; overrides auto-detect.",
         )
-        path = filedialog.askopenfilename(
-            title="Select venv activate script",
-            filetypes=[("All files", "*.*")],
-            initialdir=self.project_path or os.path.expanduser("~"),
+        path, _ = QFileDialog.getOpenFileName(
+            self,
+            "Select venv activate script",
+            self.project_path or os.path.expanduser("~"),
+            "All files (*.*)",
         )
         if path and os.path.isfile(path):
             save_venv_activate_path(path)
             self.venv_activate_path = path
             self._update_path_labels()
-            messagebox.showinfo("ShScriptHub", "Venv activate path saved.")
+            QMessageBox.information(self, "ShScriptHub", "Venv activate path saved.")
 
     def _refresh_scripts(self):
         if not self.project_path:
-            messagebox.showinfo("ShScriptHub", "Select project path first.")
+            QMessageBox.information(self, "ShScriptHub", "Select project path first.")
             return
         self.load_scripts()
 
@@ -152,29 +379,21 @@ class ShScriptHubApp:
         self._update_path_labels()
         if self.project_path:
             self.load_scripts()
-        messagebox.showinfo("ShScriptHub", "Venv path cleared. Backend scripts will use auto-detect.")
+        QMessageBox.information(
+            self, "ShScriptHub", "Venv path cleared. Backend scripts will use auto-detect."
+        )
 
     def _ensure_terminal_path(self):
         if self.terminal_path and os.path.isfile(self.terminal_path):
             return
-        messagebox.showinfo(
+        QMessageBox.information(
+            self,
             "ShScriptHub",
             "Select your terminal executable (e.g. Git Bash).",
         )
         self._choose_terminal_path()
 
-    def _setup_styles(self):
-        style = ttk.Style()
-        style.configure("Bold.TLabel", font=("Segoe UI", 10, "bold"))
-        style.configure("TableHeader.TLabel", font=("Segoe UI", 9, "bold"), padding=(0, 4))
-        style.configure("StatusIdle.TLabel", foreground="#6b7280", font=("Segoe UI", 9))
-        style.configure("StatusRunning.TLabel", foreground="#15803d", font=("Segoe UI", 9))
-        style.configure("StatusStopped.TLabel", foreground="#64748b", font=("Segoe UI", 9))
-        style.configure("Script.TLabel", font=("Segoe UI", 9))
-        style.configure("Table.TFrame", padding=2)
-
     def _get_default_category(self, script_path: str) -> str:
-        """Auto-detect category from path: backend/frontend folder as first segment, else none."""
         rel = os.path.relpath(script_path, self.project_path)
         parts = os.path.normpath(rel).split(os.sep)
         if parts and parts[0] == "backend":
@@ -209,12 +428,12 @@ class ShScriptHubApp:
 
     def _update_title(self):
         if getattr(self, "project_path", None):
-            self.master.title(f"ShScriptHub - {os.path.basename(self.project_path)}")
+            self.setWindowTitle(f"ShScriptHub - {os.path.basename(self.project_path)}")
         else:
-            self.master.title("ShScriptHub")
+            self.setWindowTitle("ShScriptHub")
 
     def select_project(self):
-        folder = filedialog.askdirectory(title="Select the root of the project")
+        folder = QFileDialog.getExistingDirectory(self, "Select the root of the project")
         if not folder:
             return
         self.project_path = folder
@@ -223,50 +442,109 @@ class ShScriptHubApp:
         save_project_path(self.project_path)
         self.load_scripts()
 
+    def _matches_search(self, script: dict, search_text: str) -> bool:
+        if not search_text or not search_text.strip():
+            return True
+        q = search_text.strip().lower()
+        rel = os.path.relpath(script["path"], self.project_path).replace("\\", "/").lower()
+        name = script["name"].lower()
+        folder = os.path.basename(os.path.dirname(script["path"])).lower()
+        return q in rel or q in name or q in folder
+
+    def _on_search_changed(self, text: str) -> None:
+        self._rebuild_cards_grid()
+
+    def _on_folder_changed(self, text: str) -> None:
+        self._rebuild_cards_grid()
+
+    def _script_folder(self, script: dict) -> str:
+        """Retorna 'root' se o script está na raiz do projeto, senão o nome da primeira pasta."""
+        rel = os.path.relpath(script["path"], self.project_path)
+        parts = os.path.normpath(rel).split(os.sep)
+        if len(parts) <= 1:
+            return "root"
+        return parts[0]
+
+    def _get_folders_with_scripts(self) -> list[str]:
+        """Pastas que têm pelo menos um script: 'root' + primeiras pastas do path."""
+        folders = set()
+        for s in self.scripts:
+            folders.add(self._script_folder(s))
+        return ["root"] + sorted(f for f in folders if f != "root")
+
+    def _refresh_folder_filter(self) -> None:
+        """Preenche o dropdown de pasta só com pastas que têm script."""
+        self.folder_combo.blockSignals(True)
+        self.folder_combo.clear()
+        self.folder_combo.addItem("All")
+        for folder in self._get_folders_with_scripts():
+            self.folder_combo.addItem(folder)
+        self.folder_combo.setCurrentIndex(0)
+        self.folder_combo.blockSignals(False)
+
+    def _on_favorite_clicked(self, row: dict) -> None:
+        path = row["script"]["path"]
+        now_fav = toggle_favorite(path)
+        row["fav_btn"].setText("★" if now_fav else "☆")
+        row["fav_btn"].setToolTip("Desfavoritar" if now_fav else "Favoritar")
+        self._rebuild_cards_grid()
+
+    def _rebuild_cards_grid(self) -> None:
+        """Reorganiza o grid: só cards que batem na pesquisa e na pasta, ordenados (favoritos primeiro), sem gaps."""
+        if not getattr(self, "cards_grid", None) or not self.script_rows:
+            return
+        search_text = self.search_edit.text() if getattr(self, "search_edit", None) else ""
+        folder_filter = self.folder_combo.currentText() if getattr(self, "folder_combo", None) else "All"
+        favorites = load_favorites()
+        matching = [
+            r for r in self.script_rows
+            if self._matches_search(r["script"], search_text)
+            and (folder_filter == "All" or self._script_folder(r["script"]) == folder_filter)
+        ]
+        matching.sort(key=lambda r: (r["script"]["path"] not in favorites, r["script"]["path"].lower()))
+        grid = self.cards_grid
+        while grid.count():
+            item = grid.takeAt(0)
+            w = item.widget()
+            if w:
+                w.setParent(None)
+        for i, row in enumerate(matching):
+            grid.addWidget(row["card"], i // 2, i % 2)
+
+    def _clear_scripts_ui(self):
+        while self.scripts_layout.count():
+            item = self.scripts_layout.takeAt(0)
+            if item.widget():
+                item.widget().deleteLater()
+
     def load_scripts(self):
         try:
-            for widget in self.scripts_frame.winfo_children():
-                widget.destroy()
-
+            self._clear_scripts_ui()
             self.script_rows = []
             self.script_manager = ScriptManager(self.project_path)
             self.scripts = self.script_manager.get_scripts()
         except Exception as e:
-            messagebox.showerror("ShScriptHub - Error", f"Failed to load scripts: {str(e)}")
+            QMessageBox.critical(self, "ShScriptHub - Error", f"Failed to load scripts: {str(e)}")
             return
 
         if not self.scripts:
-            ttk.Label(self.scripts_frame, text="No .sh scripts found").pack()
+            no_scripts = QLabel("No .sh scripts found")
+            self.scripts_layout.addWidget(no_scripts)
             return
 
-        self.table_frame = ttk.Frame(self.scripts_frame, style="Table.TFrame")
-        self.table_frame.pack(fill="both", expand=True)
-
-        cell_pad = {"padx": 12, "pady": 8}
+        favorites = load_favorites()
+        self.scripts.sort(key=lambda s: (s["path"] not in favorites, s["path"].lower()))
 
         script_categories = load_script_categories()
-        CATEGORY_OPTIONS = ("None", "backend", "frontend")
-
-        ttk.Label(self.table_frame, text="File name", style="TableHeader.TLabel").grid(row=0, column=0, sticky="w", **cell_pad)
-        ttk.Label(self.table_frame, text="Category", style="TableHeader.TLabel").grid(row=0, column=1, sticky="w", **cell_pad)
-        ttk.Label(self.table_frame, text="Env", style="TableHeader.TLabel").grid(row=0, column=2, sticky="w", **cell_pad)
-        ttk.Label(self.table_frame, text="Status", style="TableHeader.TLabel").grid(row=0, column=3, sticky="w", **cell_pad)
-        ttk.Label(self.table_frame, text="PID", style="TableHeader.TLabel").grid(row=0, column=4, sticky="w", **cell_pad)
-        ttk.Label(self.table_frame, text="Actions", style="TableHeader.TLabel").grid(row=0, column=5, sticky="w", **cell_pad)
-        ttk.Separator(self.table_frame, orient="horizontal").grid(row=1, column=0, columnspan=8, sticky="ew", pady=(0, 4))
-
-        self.table_frame.columnconfigure(0, weight=1)
-        self.table_frame.columnconfigure(1, weight=0, minsize=90)
-        self.table_frame.columnconfigure(2, weight=0, minsize=56)
-        self.table_frame.columnconfigure(3, weight=0, minsize=80)
-        self.table_frame.columnconfigure(4, weight=0, minsize=90)
-        self.table_frame.columnconfigure(5, weight=0, minsize=56)
-        self.table_frame.columnconfigure(6, weight=0, minsize=56)
-        self.table_frame.columnconfigure(7, weight=0, minsize=56)
+        cards_per_row = 2
+        self.cards_grid = QGridLayout()
+        grid = self.cards_grid
+        grid.setSpacing(16)
+        grid.setContentsMargins(0, 0, 0, 0)
+        grid.setColumnStretch(0, 1)
+        grid.setColumnStretch(1, 1)
 
         for row_idx, s in enumerate(self.scripts):
-            r_data = 2 + row_idx * 2
-            r_sep = r_data + 1
             rel_path = os.path.relpath(s["path"], self.project_path).replace("\\", "/")
             display_name = rel_path
             if s["path"] in script_categories:
@@ -275,70 +553,151 @@ class ShScriptHubApp:
                 category_to_show = self._get_default_category(s["path"])
             category_display = "None" if category_to_show == "none" else category_to_show
             env_display = self._get_env_display(s, category_to_show)
-            status_var = tk.StringVar(value="—")
-            pid_var = tk.StringVar(value="—")
-            category_var = tk.StringVar(value=category_display)
-            ttk.Label(self.table_frame, text=display_name, style="Script.TLabel", anchor="w").grid(row=r_data, column=0, sticky="ew", **cell_pad)
-            category_combo = ttk.Combobox(
-                self.table_frame,
-                textvariable=category_var,
-                values=CATEGORY_OPTIONS,
-                state="readonly",
-                width=10,
-            )
-            category_combo.grid(row=r_data, column=1, sticky="w", **cell_pad)
-            category_combo.set(category_display)
 
-            env_label = ttk.Label(self.table_frame, text=env_display, style="Script.TLabel", anchor="w")
-            env_label.grid(row=r_data, column=2, sticky="w", **cell_pad)
+            card = QFrame()
+            card.setObjectName("scriptCard")
+            card_layout = QVBoxLayout(card)
+            card_layout.setContentsMargins(16, 14, 16, 14)
+            card_layout.setSpacing(10)
 
-            def _on_category_change(script_path, var, lbl):
-                val = var.get()
+            title_row = QHBoxLayout()
+            name_lbl = QLabel(display_name)
+            name_lbl.setStyleSheet("font-weight: 600; font-size: 11pt; color: #111827; background: transparent;")
+            name_lbl.setWordWrap(True)
+            title_row.addWidget(name_lbl, 1)
+            is_fav = s["path"] in favorites
+            fav_btn = QPushButton("★" if is_fav else "☆")
+            fav_btn.setToolTip("Desfavoritar" if is_fav else "Favoritar")
+            fav_btn.setFixedSize(32, 32)
+            fav_btn.setStyleSheet(f"""
+                QPushButton {{ font-size: 14pt; border: none; background: transparent; color: #d97706; }}
+                QPushButton:hover {{ color: #b45309; }}
+            """)
+            title_row.addWidget(fav_btn, 0)
+            card_layout.addLayout(title_row)
+
+            meta_row = QHBoxLayout()
+            meta_row.setSpacing(12)
+            category_combo = NoWheelComboBox()
+            category_combo.addItems(CATEGORY_OPTIONS)
+            category_combo.setCurrentText(category_display)
+            category_combo.setMinimumWidth(100)
+            env_label = QLabel(env_display)
+            env_label.setStyleSheet("color: #6b7280;")
+            meta_row.addWidget(category_combo)
+            meta_row.addWidget(env_label, 1)
+            card_layout.addLayout(meta_row)
+
+            status_label = QLabel(PLACEHOLDER)
+            status_label.setStyleSheet("color: #6b7280;")
+            pid_label = QLabel(PLACEHOLDER)
+            pid_label.setStyleSheet("color: #6b7280;")
+            status_row = QHBoxLayout()
+            status_row.addWidget(QLabel("Status:"))
+            status_row.addWidget(status_label)
+            status_row.addSpacing(12)
+            status_row.addWidget(QLabel("PID:"))
+            status_row.addWidget(pid_label)
+            status_row.addStretch()
+            card_layout.addLayout(status_row)
+
+            metrics_grid = QGridLayout()
+            metric_specs = [
+                ("CPU %", "cpu_pct_label"),
+                ("RAM (RSS)", "ram_rss_label"),
+                ("RAM %", "ram_pct_label"),
+                ("Tempo ativo", "elapsed_label"),
+                ("Peak memory", "peak_mem_label"),
+                ("CPU time", "cpu_time_label"),
+                ("Threads", "threads_label"),
+            ]
+            metric_widgets = {}
+            for i, (title, key) in enumerate(metric_specs):
+                r, c = i // 2, (i % 2) * 2
+                metrics_grid.addWidget(QLabel(title + ":"), r, c)
+                w = QLabel(PLACEHOLDER)
+                w.setStyleSheet("color: #374151;")
+                metrics_grid.addWidget(w, r, c + 1)
+                metric_widgets[key] = w
+            cpu_pct_label = metric_widgets["cpu_pct_label"]
+            ram_rss_label = metric_widgets["ram_rss_label"]
+            ram_pct_label = metric_widgets["ram_pct_label"]
+            elapsed_label = metric_widgets["elapsed_label"]
+            peak_mem_label = metric_widgets["peak_mem_label"]
+            cpu_time_label = metric_widgets["cpu_time_label"]
+            threads_label = metric_widgets["threads_label"]
+            card_layout.addLayout(metrics_grid)
+
+            btn_layout = QHBoxLayout()
+            run_btn = QPushButton("Run")
+            run_btn.setObjectName("runBtn")
+            run_btn.setStyleSheet("""
+                QPushButton { background-color: #15803d; color: #ffffff; border: none; }
+                QPushButton:hover { background-color: #166534; }
+                QPushButton:pressed { background-color: #14532d; }
+            """)
+            kill_btn = QPushButton("Kill")
+            kill_btn.setObjectName("killBtn")
+            kill_btn.setStyleSheet("""
+                QPushButton { background-color: #b91c1c; color: #ffffff; border: none; }
+                QPushButton:hover { background-color: #991b1b; }
+                QPushButton:pressed { background-color: #7f1d1d; }
+            """)
+            kill_btn.setVisible(False)
+            btn_layout.addWidget(run_btn)
+            btn_layout.addWidget(kill_btn)
+            btn_layout.addStretch()
+            card_layout.addLayout(btn_layout)
+
+            def _on_category_change(script_path, combo, env_lbl):
+                val = combo.currentText()
                 stored = "none" if val == "None" else val
                 save_script_category(script_path, stored)
-                if lbl.winfo_exists():
-                    lbl.config(text=self._get_env_display({"path": script_path}, stored))
+                env_lbl.setText(self._get_env_display({"path": script_path}, stored))
 
-            category_combo.bind(
-                "<<ComboboxSelected>>",
-                lambda event, sp=s["path"], cv=category_var, el=env_label: _on_category_change(sp, cv, el),
+            category_combo.currentTextChanged.connect(
+                lambda text, sp=s["path"], cb=category_combo, el=env_label: _on_category_change(sp, cb, el)
             )
-
-            status_label = ttk.Label(self.table_frame, textvariable=status_var, style="StatusIdle.TLabel", anchor="w")
-            status_label.grid(row=r_data, column=3, sticky="w", **cell_pad)
-            ttk.Label(self.table_frame, textvariable=pid_var, style="Script.TLabel", anchor="w").grid(row=r_data, column=4, sticky="w", **cell_pad)
-            run_btn = ttk.Button(self.table_frame, text="Run", width=6)
-            run_btn.grid(row=r_data, column=6, **cell_pad)
-            kill_btn = ttk.Button(self.table_frame, text="Kill", width=6)
-            kill_btn.grid(row=r_data, column=7, **cell_pad)
-            kill_btn.grid_remove()
-
-            if row_idx < len(self.scripts) - 1:
-                ttk.Separator(self.table_frame, orient="horizontal").grid(row=r_sep, column=0, columnspan=8, sticky="ew", pady=0)
 
             row_dict = {
                 "script": s,
-                "category_var": category_var,
-                "status_var": status_var,
+                "card": card,
+                "fav_btn": fav_btn,
+                "category_combo": category_combo,
                 "status_label": status_label,
-                "pid_var": pid_var,
+                "pid_label": pid_label,
+                "cpu_pct_label": cpu_pct_label,
+                "ram_rss_label": ram_rss_label,
+                "ram_pct_label": ram_pct_label,
+                "elapsed_label": elapsed_label,
+                "peak_mem_label": peak_mem_label,
+                "cpu_time_label": cpu_time_label,
+                "threads_label": threads_label,
                 "run_btn": run_btn,
                 "kill_btn": kill_btn,
                 "process": None,
                 "kill_pids": None,
+                "start_time": None,
+                "peak_rss": 0.0,
+                "cpu_primed_pids": None,
             }
             self.script_rows.append(row_dict)
-            run_btn.configure(command=lambda r=row_dict: self._run_script_row(r))
-            kill_btn.configure(command=lambda r=row_dict: self._kill_script_row(r))
+            run_btn.clicked.connect(lambda checked=False, r=row_dict: self._run_script_row(r))
+            kill_btn.clicked.connect(lambda checked=False, r=row_dict: self._kill_script_row(r))
+            fav_btn.clicked.connect(lambda checked=False, r=row_dict: self._on_favorite_clicked(r))
 
-    def _set_status(self, row, text):
-        row["status_var"].set(text)
-        style_map = {"—": "StatusIdle.TLabel", "Running": "StatusRunning.TLabel", "Stopped": "StatusStopped.TLabel"}
-        row.get("status_label", tk.Misc()).configure(style=style_map.get(text, "StatusIdle.TLabel"))
+        self._refresh_folder_filter()
+        self.scripts_layout.addLayout(grid)
+        self._rebuild_cards_grid()
 
-    def _run_script_row(self, row):
+    def _set_status(self, row: dict, text: str) -> None:
+        row["status_label"].setText(text)
+        color = {"—": "#6b7280", "Running": "#15803d", "Stopped": "#64748b"}.get(text, "#6b7280")
+        row["status_label"].setStyleSheet(f"color: {color};")
+
+    def _run_script_row(self, row: dict) -> None:
         try:
-            cat = row["category_var"].get()
+            cat = row["category_combo"].currentText()
             category = "none" if cat == "None" else cat
             p = run_script_in_gitbash(
                 row["script"]["path"],
@@ -349,22 +708,27 @@ class ShScriptHubApp:
             )
             row["process"] = p
             row["kill_pids"] = None
+            row["start_time"] = time.monotonic()
+            row["peak_rss"] = 0.0
+            row["cpu_primed_pids"] = set()
             self._set_status(row, "Running")
-            row["pid_var"].set(str(p.pid))
-            row["kill_btn"].grid()
+            row["pid_label"].setText(str(p.pid))
+            for key in ("cpu_pct_label", "ram_rss_label", "ram_pct_label", "elapsed_label", "peak_mem_label", "cpu_time_label", "threads_label"):
+                row[key].setText(PLACEHOLDER)
+            row["kill_btn"].setVisible(True)
             delay_ms = int(utils.TREE_CAPTURE_DELAY_SEC * 1000)
-            self.master.after(delay_ms, lambda: self._capture_kill_pids(row))
-            messagebox.showinfo("ShScriptHub", f"Script '{row['script']['name']}' started.")
+            QTimer.singleShot(delay_ms, lambda: self._capture_kill_pids(row))
+            QMessageBox.information(self, "ShScriptHub", f"Script '{row['script']['name']}' started.")
         except Exception as e:
-            messagebox.showerror("ShScriptHub - Error", str(e))
+            QMessageBox.critical(self, "ShScriptHub - Error", str(e))
 
-    def _capture_kill_pids(self, row):
+    def _capture_kill_pids(self, row: dict) -> None:
         proc = row.get("process")
         if proc is None or proc.poll() is not None:
             return
         row["kill_pids"] = get_process_tree_after_spawn(proc)
 
-    def _kill_script_row(self, row):
+    def _kill_script_row(self, row: dict) -> None:
         proc = row.get("process")
         if proc is None:
             return
@@ -373,24 +737,62 @@ class ShScriptHubApp:
             kill_pids = [proc.pid]
         kill_script_process(proc, kill_pids=kill_pids)
         self._set_status(row, "Stopped")
-        row["pid_var"].set("—")
+        row["pid_label"].setText(PLACEHOLDER)
         row["process"] = None
         row["kill_pids"] = None
-        row["kill_btn"].grid_remove()
+        row["start_time"] = None
+        row["peak_rss"] = 0.0
+        row["cpu_primed_pids"] = None
+        for key in ("cpu_pct_label", "ram_rss_label", "ram_pct_label", "elapsed_label", "peak_mem_label", "cpu_time_label", "threads_label"):
+            row[key].setText(PLACEHOLDER)
+        row["kill_btn"].setVisible(False)
 
-    def check_processes(self):
+    def check_processes(self) -> None:
         for row in getattr(self, "script_rows", []):
             proc = row.get("process")
             if proc is None:
                 continue
             if proc.poll() is not None:
                 self._set_status(row, "Stopped")
-                row["pid_var"].set("—")
+                row["pid_label"].setText(PLACEHOLDER)
                 row["process"] = None
+                row["start_time"] = None
+                row["peak_rss"] = 0.0
+                row["cpu_primed_pids"] = None
+                for key in ("cpu_pct_label", "ram_rss_label", "ram_pct_label", "elapsed_label", "peak_mem_label", "cpu_time_label", "threads_label"):
+                    row[key].setText(PLACEHOLDER)
                 kill_btn = row.get("kill_btn")
                 if kill_btn:
-                    kill_btn.grid_remove()
+                    kill_btn.setVisible(False)
 
-    def _tick_process_check(self):
+    def _update_row_metrics(self, row: dict) -> None:
+        proc = row.get("process")
+        if proc is None or proc.poll() is not None:
+            return
+        pids = row.get("kill_pids")
+        if not pids:
+            pids = [proc.pid]
+        start_time = row.get("start_time") or 0
+        peak_rss = row.get("peak_rss") or 0.0
+        cpu_primed_pids = row.get("cpu_primed_pids")
+        if cpu_primed_pids is None:
+            cpu_primed_pids = set()
+            row["cpu_primed_pids"] = cpu_primed_pids
+        try:
+            m = collect_metrics(pids, start_time, peak_rss, cpu_primed_pids)
+        except Exception:
+            return
+        row["peak_rss"] = m["peak_rss_bytes"]
+        row["cpu_pct_label"].setText(f"{m['cpu_percent']:.1f}%")
+        row["ram_rss_label"].setText(f"{m['rss_mb']:.2f} MB")
+        row["ram_pct_label"].setText(f"{m['ram_percent']:.1f}%")
+        row["elapsed_label"].setText(format_elapsed(m["elapsed_sec"]))
+        row["peak_mem_label"].setText(f"{m['peak_rss_mb']:.2f} MB")
+        row["cpu_time_label"].setText(format_cpu_time(m["cpu_time_sec"]))
+        row["threads_label"].setText(str(m["num_threads"]))
+
+    def _tick_process_check(self) -> None:
         self.check_processes()
-        self.master.after(1000, self._tick_process_check)
+        for row in getattr(self, "script_rows", []):
+            if row.get("process") is not None and row["process"].poll() is None:
+                self._update_row_metrics(row)

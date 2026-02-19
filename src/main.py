@@ -1,20 +1,31 @@
-from gui import ShScriptHubApp
-import tkinter as tk
-from utils import get_resource_path
+import sys
 import os
+from PySide6.QtWidgets import QApplication
+from PySide6.QtGui import QIcon
+from PySide6.QtCore import Qt
+from gui import ShScriptHubApp, APP_STYLESHEET
+from utils import get_resource_path
+
 
 def main():
-    root = tk.Tk()
-    
-    icon_path = get_resource_path('assets/icon.ico')
+    app = QApplication(sys.argv)
+    app.setStyleSheet(APP_STYLESHEET)
+    try:
+        app.setAttribute(Qt.AA_UseStyleSheetPalette)
+    except AttributeError:
+        pass
+    icon_path = get_resource_path("assets/icon.ico")
     if os.path.exists(icon_path):
         try:
-            root.iconbitmap(default=icon_path)
+            app.setWindowIcon(QIcon(icon_path))
         except Exception as e:
             print(f"Warning: Could not set icon: {e}")
-    
-    app = ShScriptHubApp(root)
-    root.mainloop()
+    window = ShScriptHubApp()
+    window.resize(900, 520)
+    window.setMinimumSize(520, 360)
+    window.show()
+    sys.exit(app.exec())
+
 
 if __name__ == "__main__":
     main()

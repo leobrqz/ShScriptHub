@@ -76,3 +76,29 @@ def save_script_category(script_path: str, category: str) -> None:
         data["script_categories"] = {}
     data["script_categories"][script_path] = category
     _save_all(data)
+
+
+def load_favorites() -> set:
+    """Returns set of script paths that are favorited."""
+    raw = _load_all().get("favorites")
+    if isinstance(raw, list):
+        return {str(p) for p in raw}
+    return set()
+
+
+def save_favorites(paths: set) -> None:
+    data = _load_all()
+    data["favorites"] = list(paths)
+    _save_all(data)
+
+
+def toggle_favorite(script_path: str) -> bool:
+    """Toggles favorite state for script_path. Returns True if now favorited."""
+    fav = load_favorites()
+    if script_path in fav:
+        fav.discard(script_path)
+        save_favorites(fav)
+        return False
+    fav.add(script_path)
+    save_favorites(fav)
+    return True

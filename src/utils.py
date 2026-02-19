@@ -7,7 +7,7 @@ import sys
 KILL_GRACEFUL_WAIT = 2.0
 KILL_FORCE_WAIT = 1.0
 
-# Delay to capture process tree (git-bash may be a launcher that exits quickly)
+
 TREE_CAPTURE_DELAY_SEC = 0.4
 
 
@@ -194,9 +194,7 @@ def kill_script_process(process: subprocess.Popen, kill_pids: list[int] | None =
 def get_resource_path(relative_path):
     """Get absolute path to resource, works for dev and for PyInstaller."""
     try:
-        # PyInstaller creates a temp folder and stores path in _MEIPASS
         base_path = sys._MEIPASS
     except Exception:
-        # Running in normal Python environment
         base_path = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
     return os.path.join(base_path, relative_path)
