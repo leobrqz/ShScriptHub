@@ -79,22 +79,29 @@ class ShScriptHubApp:
         project_lbl.bind("<Enter>", lambda e: project_lbl.configure(bg=bar_hover_bg))
         project_lbl.bind("<Leave>", lambda e: project_lbl.configure(bg=bar_bg))
 
-        config_menu = tk.Menu(menubar_frame, **menu_style)
-        config_menu.add_command(label="Set terminal path", command=self._choose_terminal_path)
-        config_menu.add_command(label="Set venv activate path", command=self._choose_venv_activate_path)
-        config_menu.add_command(label="Clear venv path", command=self._clear_venv_activate_path)
-        config_lbl = tk.Label(menubar_frame, text="Config", bg=bar_bg, fg="#333333", font=("Segoe UI", 9), padx=10, pady=4, cursor="hand2")
-        config_lbl.pack(side="left")
-        config_lbl.bind("<Button-1>", lambda e: self._show_popup_menu(config_lbl, config_menu))
-        config_lbl.bind("<Enter>", lambda e: config_lbl.configure(bg=bar_hover_bg))
-        config_lbl.bind("<Leave>", lambda e: config_lbl.configure(bg=bar_bg))
+        terminal_menu = tk.Menu(menubar_frame, **menu_style)
+        terminal_menu.add_command(label="Set terminal path", command=self._choose_terminal_path)
+        terminal_lbl = tk.Label(menubar_frame, text="Terminal", bg=bar_bg, fg="#333333", font=("Segoe UI", 9), padx=10, pady=4, cursor="hand2")
+        terminal_lbl.pack(side="left")
+        terminal_lbl.bind("<Button-1>", lambda e: self._show_popup_menu(terminal_lbl, terminal_menu))
+        terminal_lbl.bind("<Enter>", lambda e: terminal_lbl.configure(bg=bar_hover_bg))
+        terminal_lbl.bind("<Leave>", lambda e: terminal_lbl.configure(bg=bar_bg))
+
+        venv_menu = tk.Menu(menubar_frame, **menu_style)
+        venv_menu.add_command(label="Set venv activate path", command=self._choose_venv_activate_path)
+        venv_menu.add_command(label="Clear venv path", command=self._clear_venv_activate_path)
+        venv_lbl = tk.Label(menubar_frame, text="Venv", bg=bar_bg, fg="#333333", font=("Segoe UI", 9), padx=10, pady=4, cursor="hand2")
+        venv_lbl.pack(side="left")
+        venv_lbl.bind("<Button-1>", lambda e: self._show_popup_menu(venv_lbl, venv_menu))
+        venv_lbl.bind("<Enter>", lambda e: venv_lbl.configure(bg=bar_hover_bg))
+        venv_lbl.bind("<Leave>", lambda e: venv_lbl.configure(bg=bar_bg))
 
     def _show_popup_menu(self, widget, menu):
         menu.tk_popup(widget.winfo_rootx(), widget.winfo_rooty() + widget.winfo_height())
 
     def _update_path_labels(self):
         self.terminal_label.config(text=f"Terminal path: {self.terminal_path or '—'}")
-        self.venv_label.config(text=f"Venv activate: {self.venv_activate_path or '—'}")
+        self.venv_label.config(text=f"Venv activate: {self.venv_activate_path or 'Auto'}")
         self.project_label.config(text=f"Project path: {self.project_path or '—'}")
 
     def _choose_terminal_path(self):
@@ -125,6 +132,7 @@ class ShScriptHubApp:
         path = filedialog.askopenfilename(
             title="Select venv activate script",
             filetypes=[("All files", "*.*")],
+            initialdir=self.project_path or os.path.expanduser("~"),
         )
         if path and os.path.isfile(path):
             save_venv_activate_path(path)
@@ -180,17 +188,21 @@ class ShScriptHubApp:
         if not os.path.isdir(cwd):
             return "—"
         if category == "backend" and self.venv_activate_path and os.path.isfile(self.venv_activate_path):
-            d = os.path.dirname(self.venv_activate_path)
-            parent = os.path.dirname(d)
-            return os.path.basename(parent) if os.path.basename(d) in ("Scripts", "bin") else os.path.basename(d)
-        for path, name in [
-            (os.path.join(cwd, ".venv", "Scripts", "activate"), ".venv"),
-            (os.path.join(cwd, ".venv", "bin", "activate"), ".venv"),
-            (os.path.join(cwd, "venv", "Scripts", "activate"), "venv"),
-            (os.path.join(cwd, "venv", "bin", "activate"), "venv"),
-        ]:
-            if os.path.isfile(path):
-                return name
+            activate_dir = os.path.dirname(self.venv_activate_path)
+            venv_dir = os.path.dirname(activate_dir)
+            return os.path.basename(venv_dir) if venv_dir else "—"
+        search_roots = [cwd]
+        if self.project_path and os.path.isdir(self.project_path) and self.project_path != cwd:
+            search_roots.append(self.project_path)
+        for root in search_roots:
+            for path, name in [
+                (os.path.join(root, ".venv", "Scripts", "activate"), ".venv"),
+                (os.path.join(root, ".venv", "bin", "activate"), ".venv"),
+                (os.path.join(root, "venv", "Scripts", "activate"), "venv"),
+                (os.path.join(root, "venv", "bin", "activate"), "venv"),
+            ]:
+                if os.path.isfile(path):
+                    return name
         if os.path.isdir(os.path.join(cwd, "node_modules")):
             return "node_modules"
         return "—"
@@ -212,12 +224,16 @@ class ShScriptHubApp:
         self.load_scripts()
 
     def load_scripts(self):
-        for widget in self.scripts_frame.winfo_children():
-            widget.destroy()
+        try:
+            for widget in self.scripts_frame.winfo_children():
+                widget.destroy()
 
-        self.script_rows = []
-        self.script_manager = ScriptManager(self.project_path)
-        self.scripts = self.script_manager.get_scripts()
+            self.script_rows = []
+            self.script_manager = ScriptManager(self.project_path)
+            self.scripts = self.script_manager.get_scripts()
+        except Exception as e:
+            messagebox.showerror("ShScriptHub - Error", f"Failed to load scripts: {str(e)}")
+            return
 
         if not self.scripts:
             ttk.Label(self.scripts_frame, text="No .sh scripts found").pack()
@@ -285,7 +301,7 @@ class ShScriptHubApp:
 
             category_combo.bind(
                 "<<ComboboxSelected>>",
-                lambda e, script_path=s["path"], var=category_var, lbl=env_label: _on_category_change(script_path, var, lbl),
+                lambda event, sp=s["path"], cv=category_var, el=env_label: _on_category_change(sp, cv, el),
             )
 
             status_label = ttk.Label(self.table_frame, textvariable=status_var, style="StatusIdle.TLabel", anchor="w")

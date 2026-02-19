@@ -1,32 +1,50 @@
+<div align="center">
+
 # ShScriptHub
 
-![Windows](https://img.shields.io/badge/Windows-0078D6?style=flat&logo=windows&logoColor=white)
+**Scans your project, detects environments and runs scripts.**
 
-A **Windows** desktop launcher to run `.sh` scripts from any project with one click — opens Git Bash in a new window. Each script runs in **its own folder** (CWD = script directory). Env (Python venv, Node) is auto-detected there; optional config venv path applies only when you mark a script as **backend**.
+[![License: GPLv3](https://img.shields.io/badge/License-GPLv3-blue.svg)](https://www.gnu.org/licenses/gpl-3.0.en.html)
+[![Windows](https://img.shields.io/badge/Windows-0078D6?style=flat&logo=windows&logoColor=white)](https://www.microsoft.com/windows)
+[![Python](https://img.shields.io/badge/Python-3776AB?style=flat&logo=python&logoColor=white)](https://www.python.org/downloads/)
 
----
 
-## ✨ Features
+</div>
 
-- **Select project folder** — Choose any project root; the path is saved for next runs
+A `.sh` script runner for anyone tired of hopping between folders and scripts. Scans your selected folder to build a centralized hub, opens a new terminal per script for easier project management and auto-detects Python environments.
+
+
+## 🛠️ Features
+
+![example](assets/example.png)
+
+### Project
+
+- **Select project folder** — Project → Set project path to choose any project root. the path is saved for next runs
 - **Refresh** — Project → Refresh to rescan scripts without restarting
-- **Config** — Set Git Bash path (prompted on first run); optional **venv activate path** (for scripts you mark as backend; shows "Auto" when not set); **Clear venv path** to revert to auto-detect
-- **Script table** — File name (path relative to project), **Category** (dropdown: None / backend / frontend), **Env** (auto-detected or from config), Status, PID, Run / Kill
-- **Category** — Auto-detected when the script lives under a folder named `backend/` or `frontend/`; you can change it per script. Your choice is saved and overrides auto-detect next time
-- **Run** — Opens a new Git Bash window; CWD is always the script’s directory (never project root unless the script is at root)
-- **Kill** — Stops the terminal for that script (only the one launched from the app)
+
+### Configuration
+
+- **Terminal** — Set Git Bash path (prompted on first run)
+- **Venv** — Optional **venv activate path** (for scripts you mark as backend; shows "Auto" when not set); **Clear venv path** to revert to auto-detect
+
+### Table
+
+- **File name** — Path relative to the project root
+- **Category** — Defaulted by folder name (`backend/` or `frontend/`), but you can change it per script
+- **Env** — Auto-detected in the script folder: `.venv`, `venv`, or `node_modules`; for **backend**, a configured venv path overrides auto-detect
 - **Status** — Idle, Running, Stopped
-- **Env** — Auto-detected in the script’s folder: `.venv`, `venv` (Python), or `node_modules` (Node). If category is **backend** and you set a venv path in Config, that path is used instead
+- **Run** — Opens Git Bash with CWD set to the script’s folder
+- **Kill** — Stops only the terminal launched by the app
 
 
 ## 📁 How scripts are discovered
 
-The app scans the **selected folder** recursively and lists every `.sh` file. For each script:
+The app scans the **selected folder** recursively and lists every `.sh` file. 
 
 - **File name** — Shown as path relative to the project (e.g. `backend/run.sh`, `frontend/dev.sh`, `scripts/docker-up.sh`)
-- **Category** — Dropdown: **None**, **backend**, **frontend**. If you haven’t set a category, it’s auto-detected: scripts under a folder named `backend/` or `frontend/` get that category; others get None. Your selection is saved and takes priority next time
-- **Working directory** — When you Run, the terminal’s CWD is **always the folder where the script lives** (so paths in the script are relative to that folder). If the script is at project root, CWD is project root
-- **Env** — Detected in that folder: `.venv` or `venv` (Python) or `node_modules` (Node). For category **backend** only, you can set **Config → Set venv activate path** to force a specific venv; otherwise auto-detect is used. If no env is found, the script just runs
+- **Working directory** — Scripts run relative to their own folder, not the project root
+- **Env** — Environment is automatically detected in the script's folder (`.venv`, `venv`, `node_modules`). For backend scripts with a configured venv path, that path is used instead
 
 Example layout (any structure works):
 
@@ -37,8 +55,6 @@ your-project/
 ├── api/              # your own name; category defaults to None
 └── scripts/          # category None; CWD = scripts/ when you run
 ```
-
-You can point ShScriptHub at any folder; it finds all `.sh` files and runs each one from its own directory with env auto-detected (or your venv path for backend).
 
 
 ## ⚙️ Setup & Run
@@ -56,13 +72,15 @@ cd ShScriptHub
 python src/main.py
 ```
 
-On first launch you may be asked to set the **terminal path** (Git Bash). Use **Project → Set project path** to choose the root of the project you want to run scripts from. Paths and category choices are saved in `config.json`. You can change them via **Config** (terminal path, venv path, clear venv path) and **Project** (set path, refresh).
+## Credits
+
+- [Icon](https://www.flaticon.com/free-icon/file_14390011) made by [jungsa](https://www.flaticon.com/authors/jungsa)
 
 ## Author
 
 **Leonardo B.**
 
-- GitHub: [@leobrqz](https://github.com/leobrqz)
+- GitHub: [leobrqz](https://github.com/leobrqz)
 - LinkedIn: [leonardobri](https://linkedin.com/in/leonardobri)
 
 Check out my other projects <3

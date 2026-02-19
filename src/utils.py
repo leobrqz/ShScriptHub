@@ -2,6 +2,7 @@ import subprocess
 import os
 import platform
 import signal
+import sys
 
 KILL_GRACEFUL_WAIT = 2.0
 KILL_FORCE_WAIT = 1.0
@@ -10,24 +11,35 @@ KILL_FORCE_WAIT = 1.0
 TREE_CAPTURE_DELAY_SEC = 0.4
 
 
-def _get_activate_cmd(cwd: str, category: str, venv_activate_path: str | None, is_windows: bool) -> str | None:
+def _get_activate_cmd(
+    cwd: str,
+    category: str,
+    venv_activate_path: str | None,
+    is_windows: bool,
+    project_path: str | None = None,
+) -> str | None:
     """Returns shell command to activate venv, or None if no venv to activate."""
     if category == "backend" and venv_activate_path and os.path.isfile(venv_activate_path):
         return f'source "{venv_activate_path.replace(os.sep, "/")}"'
+    search_roots = [cwd]
+    if project_path and os.path.isdir(project_path) and project_path != cwd:
+        search_roots.append(project_path)
     if is_windows:
-        for subpath, name in [
-            (os.path.join(cwd, ".venv", "Scripts", "activate"), ".venv"),
-            (os.path.join(cwd, "venv", "Scripts", "activate"), "venv"),
-        ]:
-            if os.path.isfile(subpath):
-                return f"source {name}/Scripts/activate"
+        for root in search_roots:
+            for subpath in [
+                os.path.join(root, ".venv", "Scripts", "activate"),
+                os.path.join(root, "venv", "Scripts", "activate"),
+            ]:
+                if os.path.isfile(subpath):
+                    return f'source "{subpath.replace(os.sep, "/")}"'
     else:
-        for subpath, name in [
-            (os.path.join(cwd, ".venv", "bin", "activate"), ".venv"),
-            (os.path.join(cwd, "venv", "bin", "activate"), "venv"),
-        ]:
-            if os.path.isfile(subpath):
-                return f"source {name}/bin/activate"
+        for root in search_roots:
+            for subpath in [
+                os.path.join(root, ".venv", "bin", "activate"),
+                os.path.join(root, "venv", "bin", "activate"),
+            ]:
+                if os.path.isfile(subpath):
+                    return f'source "{subpath.replace(os.sep, "/")}"'
     return None
 
 
@@ -47,7 +59,7 @@ def run_script_in_gitbash(
     cwd = os.path.dirname(script_path)
     script_name = os.path.basename(script_path)
 
-    activate_cmd = _get_activate_cmd(cwd, category, venv_activate_path, is_windows)
+    activate_cmd = _get_activate_cmd(cwd, category, venv_activate_path, is_windows, project_path)
     if activate_cmd:
         command = f"{activate_cmd} && bash {script_name}"
     else:
@@ -56,7 +68,7 @@ def run_script_in_gitbash(
     if is_windows:
         exe = (terminal_path or "").strip()
         if not exe or not os.path.exists(exe):
-            raise FileNotFoundError("Terminal executable not found. Set it in Config → Terminal path.")
+            raise FileNotFoundError("Terminal executable not found. Set it in Terminal → Set terminal path.")
         command = f"({command}); exec bash"
         return subprocess.Popen(
             [exe, f"--cd={cwd}", "-c", command],
@@ -177,3 +189,14 @@ def kill_script_process(process: subprocess.Popen, kill_pids: list[int] | None =
                     process.kill()
     except (ProcessLookupError, OSError):
         pass
+
+
+def get_resource_path(relative_path):
+    """Get absolute path to resource, works for dev and for PyInstaller."""
+    try:
+        # PyInstaller creates a temp folder and stores path in _MEIPASS
+        base_path = sys._MEIPASS
+    except Exception:
+        # Running in normal Python environment
+        base_path = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
+    return os.path.join(base_path, relative_path)
