@@ -20,7 +20,7 @@ from PySide6.QtWidgets import (
     QApplication,
 )
 from PySide6.QtCore import QTimer, Qt
-from PySide6.QtGui import QAction, QFontMetrics, QWheelEvent
+from PySide6.QtGui import QAction, QFontMetrics, QResizeEvent, QWheelEvent
 from script_manager import ScriptManager
 import utils
 from utils import run_script_in_gitbash, kill_script_process, get_process_tree_after_spawn
@@ -37,156 +37,18 @@ from config import (
     toggle_favorite,
 )
 from metrics import collect_metrics, format_elapsed, format_cpu_time, PLACEHOLDER
+from theme import PALETTE
 
 CELL_PAD = 12
 CATEGORY_OPTIONS = ("None", "backend", "frontend")
+CARD_MIN_WIDTH = 320
 
 
 class NoWheelComboBox(QComboBox):
-    """QComboBox que ignora o scroll do mouse para evitar troca acidental de opção."""
+    """QComboBox that ignores mouse wheel to avoid accidental option change."""
 
     def wheelEvent(self, event: QWheelEvent) -> None:
         event.ignore()
-
-BG_MAIN = "#f0f2f5"
-BG_CARD = "#ffffff"
-BORDER = "#e5e7eb"
-
-APP_STYLESHEET = f"""
-QApplication, QMainWindow, QWidget, QScrollArea {{
-    font-family: "Segoe UI", sans-serif;
-    font-size: 9pt;
-    background-color: {BG_MAIN};
-    color: #1f2937;
-}}
-QMenuBar {{
-    background-color: {BG_MAIN};
-    padding: 4px 0;
-    border-bottom: 1px solid {BORDER};
-}}
-QMenuBar::item {{
-    padding: 8px 14px;
-    background-color: transparent;
-    border-radius: 4px;
-}}
-QMenuBar::item:selected {{
-    background-color: #e5e7eb;
-}}
-QMenu {{
-    background-color: {BG_CARD};
-    padding: 3px 0;
-    border: 1px solid {BORDER};
-    border-radius: 6px;
-}}
-QMenu::item {{
-    padding: 5px 12px;
-}}
-QMenu::item:selected {{
-    background-color: #f3f4f6;
-}}
-QLabel {{
-    color: #374151;
-}}
-QPushButton {{
-    min-width: 56px;
-    padding: 8px 14px;
-    border-radius: 6px;
-    font-weight: 500;
-}}
-QPushButton#runBtn, QFrame#scriptCard QPushButton#runBtn {{
-    background-color: #15803d;
-    color: #ffffff;
-    border: none;
-}}
-QPushButton#runBtn:hover, QFrame#scriptCard QPushButton#runBtn:hover {{
-    background-color: #166534;
-    color: #ffffff;
-}}
-QPushButton#runBtn:pressed, QFrame#scriptCard QPushButton#runBtn:pressed {{
-    background-color: #14532d;
-    color: #ffffff;
-}}
-QPushButton#killBtn, QFrame#scriptCard QPushButton#killBtn {{
-    background-color: #b91c1c;
-    color: #ffffff;
-    border: none;
-}}
-QPushButton#killBtn:hover, QFrame#scriptCard QPushButton#killBtn:hover {{
-    background-color: #991b1b;
-    color: #ffffff;
-}}
-QPushButton#killBtn:pressed, QFrame#scriptCard QPushButton#killBtn:pressed {{
-    background-color: #7f1d1d;
-    color: #ffffff;
-}}
-QComboBox {{
-    min-width: 100px;
-    padding: 6px 10px;
-    border: 1px solid {BORDER};
-    border-radius: 6px;
-    background-color: {BG_CARD};
-}}
-QComboBox:hover {{
-    border-color: #9ca3af;
-}}
-QComboBox::drop-down {{
-    border: none;
-    width: 20px;
-}}
-QScrollArea {{
-    border: none;
-    background-color: {BG_MAIN};
-}}
-QScrollBar:vertical {{
-    background: {BG_MAIN};
-    width: 10px;
-    border-radius: 5px;
-    margin: 0;
-}}
-QScrollBar::handle:vertical {{
-    background: #9ca3af;
-    border-radius: 5px;
-    min-height: 30px;
-}}
-QScrollBar::handle:vertical:hover {{
-    background: #6b7280;
-}}
-QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {{
-    height: 0;
-    background: {BG_MAIN};
-}}
-QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical {{
-    background: {BG_MAIN};
-}}
-QScrollBar:horizontal {{
-    background: {BG_MAIN};
-    height: 10px;
-    border-radius: 5px;
-    margin: 0;
-}}
-QScrollBar::handle:horizontal {{
-    background: #9ca3af;
-    border-radius: 5px;
-    min-width: 30px;
-}}
-QScrollBar::handle:horizontal:hover {{
-    background: #6b7280;
-}}
-QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal {{
-    width: 0;
-}}
-QScrollBar::add-page:horizontal, QScrollBar::sub-page:horizontal {{
-    background: {BG_MAIN};
-}}
-QFrame#scriptCard {{
-    background-color: {BG_CARD};
-    border: 1px solid {BORDER};
-    border-radius: 10px;
-}}
-QFrame#scriptCard QLabel, QFrame#scriptCard QComboBox {{
-    background-color: transparent;
-}}
-"""
 
 
 class ShScriptHubApp(QMainWindow):
@@ -198,6 +60,7 @@ class ShScriptHubApp(QMainWindow):
         self.venv_activate_path = load_venv_activate_path()
         self.project_path = None
         self.script_rows = []
+        self._grid_columns = 2
 
         self._update_title()
         self._build_menubar()
@@ -221,8 +84,8 @@ class ShScriptHubApp(QMainWindow):
         layout.addSpacing(16)
 
         sep = QFrame()
+        sep.setObjectName("separator")
         sep.setFrameShape(QFrame.HLine)
-        sep.setStyleSheet("background-color: #e5e7eb; max-height: 1px;")
         layout.addWidget(sep)
         layout.addSpacing(12)
 
@@ -232,42 +95,27 @@ class ShScriptHubApp(QMainWindow):
         self.scroll_area.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
         self.scroll_area.setFrameShape(QFrame.NoFrame)
         vp = self.scroll_area.viewport()
+        vp.setObjectName("scrollViewport")
         vp.setAutoFillBackground(True)
-        vp.setStyleSheet(f"background-color: {BG_MAIN};")
         self.scripts_container = QWidget()
-        self.scripts_container.setStyleSheet(f"background-color: {BG_MAIN};")
+        self.scripts_container.setObjectName("scriptsContainer")
         self.scripts_layout = QVBoxLayout(self.scripts_container)
         self.scripts_layout.setContentsMargins(0, 0, 0, 0)
         self.scripts_layout.setAlignment(Qt.AlignTop)
         self.scroll_area.setWidget(self.scripts_container)
 
         self.search_edit = QLineEdit()
-        self.search_edit.setPlaceholderText("Pesquisar por pasta ou nome do arquivo...")
+        self.search_edit.setObjectName("searchEdit")
+        self.search_edit.setPlaceholderText("Search by folder or file name...")
         self.search_edit.setClearButtonEnabled(True)
-        self.search_edit.setStyleSheet(f"""
-            QLineEdit {{
-                padding: 10px 14px;
-                border: 1px solid {BORDER};
-                border-radius: 8px;
-                background-color: {BG_CARD};
-                min-height: 20px;
-            }}
-        """)
         self.folder_combo = NoWheelComboBox()
+        self.folder_combo.setObjectName("folderCombo")
         self.folder_combo.setMinimumWidth(140)
         self.folder_combo.addItem("All")
-        self.folder_combo.setStyleSheet(f"""
-            QComboBox {{
-                padding: 8px 12px;
-                border: 1px solid {BORDER};
-                border-radius: 8px;
-                background-color: {BG_CARD};
-            }}
-        """)
         search_row = QHBoxLayout()
         search_row.setSpacing(10)
         search_row.addWidget(self.search_edit, 1)
-        search_row.addWidget(QLabel("Pasta:"))
+        search_row.addWidget(QLabel("Folder:"))
         search_row.addWidget(self.folder_combo, 0)
         layout.addLayout(search_row)
         layout.addSpacing(8)
@@ -326,6 +174,21 @@ class ShScriptHubApp(QMainWindow):
         self.terminal_label.setText(f"Terminal path: {self.terminal_path or '—'}")
         self.venv_label.setText(f"Venv activate: {self.venv_activate_path or 'Auto'}")
         self.project_label.setText(f"Project path: {self.project_path or '—'}")
+
+    def _get_grid_columns(self) -> int:
+        width = self.scroll_area.viewport().width() if self.scroll_area else 0
+        if width <= 0:
+            return 2
+        return max(1, min(3, width // CARD_MIN_WIDTH))
+
+    def resizeEvent(self, event: QResizeEvent) -> None:
+        super().resizeEvent(event)
+        if not self.script_rows:
+            return
+        new_cols = self._get_grid_columns()
+        if new_cols != self._grid_columns:
+            self._grid_columns = new_cols
+            self._rebuild_cards_layout()
 
     def _choose_terminal_path(self):
         QMessageBox.information(
@@ -452,13 +315,13 @@ class ShScriptHubApp(QMainWindow):
         return q in rel or q in name or q in folder
 
     def _on_search_changed(self, text: str) -> None:
-        self._rebuild_cards_grid()
+        self._rebuild_cards_layout()
 
     def _on_folder_changed(self, text: str) -> None:
-        self._rebuild_cards_grid()
+        self._rebuild_cards_layout()
 
     def _script_folder(self, script: dict) -> str:
-        """Retorna 'root' se o script está na raiz do projeto, senão o nome da primeira pasta."""
+        """Return 'root' if script is at project root, else the first folder name."""
         rel = os.path.relpath(script["path"], self.project_path)
         parts = os.path.normpath(rel).split(os.sep)
         if len(parts) <= 1:
@@ -466,14 +329,14 @@ class ShScriptHubApp(QMainWindow):
         return parts[0]
 
     def _get_folders_with_scripts(self) -> list[str]:
-        """Pastas que têm pelo menos um script: 'root' + primeiras pastas do path."""
+        """Folders that have at least one script: 'root' plus first path folders."""
         folders = set()
         for s in self.scripts:
             folders.add(self._script_folder(s))
         return ["root"] + sorted(f for f in folders if f != "root")
 
     def _refresh_folder_filter(self) -> None:
-        """Preenche o dropdown de pasta só com pastas que têm script."""
+        """Populate the folder dropdown with only folders that have scripts."""
         self.folder_combo.blockSignals(True)
         self.folder_combo.clear()
         self.folder_combo.addItem("All")
@@ -486,12 +349,12 @@ class ShScriptHubApp(QMainWindow):
         path = row["script"]["path"]
         now_fav = toggle_favorite(path)
         row["fav_btn"].setText("★" if now_fav else "☆")
-        row["fav_btn"].setToolTip("Desfavoritar" if now_fav else "Favoritar")
-        self._rebuild_cards_grid()
+        row["fav_btn"].setToolTip("Unfavorite" if now_fav else "Favorite")
+        self._rebuild_cards_layout()
 
-    def _rebuild_cards_grid(self) -> None:
-        """Reorganiza o grid: só cards que batem na pesquisa e na pasta, ordenados (favoritos primeiro), sem gaps."""
-        if not getattr(self, "cards_grid", None) or not self.script_rows:
+    def _rebuild_cards_layout(self) -> None:
+        """Build rows of cards: each row is full-width; cards in a row share width equally. No empty columns."""
+        if not self.script_rows:
             return
         search_text = self.search_edit.text() if getattr(self, "search_edit", None) else ""
         folder_filter = self.folder_combo.currentText() if getattr(self, "folder_combo", None) else "All"
@@ -502,14 +365,25 @@ class ShScriptHubApp(QMainWindow):
             and (folder_filter == "All" or self._script_folder(r["script"]) == folder_filter)
         ]
         matching.sort(key=lambda r: (r["script"]["path"] not in favorites, r["script"]["path"].lower()))
-        grid = self.cards_grid
-        while grid.count():
-            item = grid.takeAt(0)
+
+        while self.scripts_layout.count():
+            item = self.scripts_layout.takeAt(0)
             w = item.widget()
             if w:
-                w.setParent(None)
-        for i, row in enumerate(matching):
-            grid.addWidget(row["card"], i // 2, i % 2)
+                w.deleteLater()
+
+        cols = self._grid_columns
+        for i in range(0, len(matching), cols):
+            row_cards = [matching[j]["card"] for j in range(i, min(i + cols, len(matching)))]
+            row_widget = QWidget()
+            row_widget.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+            row_layout = QHBoxLayout(row_widget)
+            row_layout.setContentsMargins(0, 0, 0, 0)
+            row_layout.setSpacing(16)
+            for card in row_cards:
+                row_layout.addWidget(card, 1)
+            self.scripts_layout.addWidget(row_widget)
+        self.scripts_layout.addStretch()
 
     def _clear_scripts_ui(self):
         while self.scripts_layout.count():
@@ -536,13 +410,7 @@ class ShScriptHubApp(QMainWindow):
         self.scripts.sort(key=lambda s: (s["path"] not in favorites, s["path"].lower()))
 
         script_categories = load_script_categories()
-        cards_per_row = 2
-        self.cards_grid = QGridLayout()
-        grid = self.cards_grid
-        grid.setSpacing(16)
-        grid.setContentsMargins(0, 0, 0, 0)
-        grid.setColumnStretch(0, 1)
-        grid.setColumnStretch(1, 1)
+        self._grid_columns = self._get_grid_columns()
 
         for row_idx, s in enumerate(self.scripts):
             rel_path = os.path.relpath(s["path"], self.project_path).replace("\\", "/")
@@ -556,23 +424,22 @@ class ShScriptHubApp(QMainWindow):
 
             card = QFrame()
             card.setObjectName("scriptCard")
+            card.setMinimumWidth(0)
+            card.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
             card_layout = QVBoxLayout(card)
             card_layout.setContentsMargins(16, 14, 16, 14)
             card_layout.setSpacing(10)
 
             title_row = QHBoxLayout()
             name_lbl = QLabel(display_name)
-            name_lbl.setStyleSheet("font-weight: 600; font-size: 11pt; color: #111827; background: transparent;")
+            name_lbl.setObjectName("cardTitleLabel")
             name_lbl.setWordWrap(True)
             title_row.addWidget(name_lbl, 1)
             is_fav = s["path"] in favorites
             fav_btn = QPushButton("★" if is_fav else "☆")
-            fav_btn.setToolTip("Desfavoritar" if is_fav else "Favoritar")
+            fav_btn.setObjectName("favBtn")
+            fav_btn.setToolTip("Unfavorite" if is_fav else "Favorite")
             fav_btn.setFixedSize(32, 32)
-            fav_btn.setStyleSheet(f"""
-                QPushButton {{ font-size: 14pt; border: none; background: transparent; color: #d97706; }}
-                QPushButton:hover {{ color: #b45309; }}
-            """)
             title_row.addWidget(fav_btn, 0)
             card_layout.addLayout(title_row)
 
@@ -583,15 +450,12 @@ class ShScriptHubApp(QMainWindow):
             category_combo.setCurrentText(category_display)
             category_combo.setMinimumWidth(100)
             env_label = QLabel(env_display)
-            env_label.setStyleSheet("color: #6b7280;")
             meta_row.addWidget(category_combo)
             meta_row.addWidget(env_label, 1)
             card_layout.addLayout(meta_row)
 
             status_label = QLabel(PLACEHOLDER)
-            status_label.setStyleSheet("color: #6b7280;")
             pid_label = QLabel(PLACEHOLDER)
-            pid_label.setStyleSheet("color: #6b7280;")
             status_row = QHBoxLayout()
             status_row.addWidget(QLabel("Status:"))
             status_row.addWidget(status_label)
@@ -606,7 +470,7 @@ class ShScriptHubApp(QMainWindow):
                 ("CPU %", "cpu_pct_label"),
                 ("RAM (RSS)", "ram_rss_label"),
                 ("RAM %", "ram_pct_label"),
-                ("Tempo ativo", "elapsed_label"),
+                ("Elapsed", "elapsed_label"),
                 ("Peak memory", "peak_mem_label"),
                 ("CPU time", "cpu_time_label"),
                 ("Threads", "threads_label"),
@@ -616,7 +480,7 @@ class ShScriptHubApp(QMainWindow):
                 r, c = i // 2, (i % 2) * 2
                 metrics_grid.addWidget(QLabel(title + ":"), r, c)
                 w = QLabel(PLACEHOLDER)
-                w.setStyleSheet("color: #374151;")
+                w.setObjectName("metricValueLabel")
                 metrics_grid.addWidget(w, r, c + 1)
                 metric_widgets[key] = w
             cpu_pct_label = metric_widgets["cpu_pct_label"]
@@ -631,18 +495,8 @@ class ShScriptHubApp(QMainWindow):
             btn_layout = QHBoxLayout()
             run_btn = QPushButton("Run")
             run_btn.setObjectName("runBtn")
-            run_btn.setStyleSheet("""
-                QPushButton { background-color: #15803d; color: #ffffff; border: none; }
-                QPushButton:hover { background-color: #166534; }
-                QPushButton:pressed { background-color: #14532d; }
-            """)
             kill_btn = QPushButton("Kill")
             kill_btn.setObjectName("killBtn")
-            kill_btn.setStyleSheet("""
-                QPushButton { background-color: #b91c1c; color: #ffffff; border: none; }
-                QPushButton:hover { background-color: #991b1b; }
-                QPushButton:pressed { background-color: #7f1d1d; }
-            """)
             kill_btn.setVisible(False)
             btn_layout.addWidget(run_btn)
             btn_layout.addWidget(kill_btn)
@@ -687,12 +541,15 @@ class ShScriptHubApp(QMainWindow):
             fav_btn.clicked.connect(lambda checked=False, r=row_dict: self._on_favorite_clicked(r))
 
         self._refresh_folder_filter()
-        self.scripts_layout.addLayout(grid)
-        self._rebuild_cards_grid()
+        self._rebuild_cards_layout()
 
     def _set_status(self, row: dict, text: str) -> None:
         row["status_label"].setText(text)
-        color = {"—": "#6b7280", "Running": "#15803d", "Stopped": "#64748b"}.get(text, "#6b7280")
+        color = {
+            "—": PALETTE["status_placeholder"],
+            "Running": PALETTE["status_running"],
+            "Stopped": PALETTE["status_stopped"],
+        }.get(text, PALETTE["status_placeholder"])
         row["status_label"].setStyleSheet(f"color: {color};")
 
     def _run_script_row(self, row: dict) -> None:

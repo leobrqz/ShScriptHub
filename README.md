@@ -7,53 +7,72 @@
 [![License: GPLv3](https://img.shields.io/badge/License-GPLv3-blue.svg)](https://www.gnu.org/licenses/gpl-3.0.en.html)
 [![Windows](https://img.shields.io/badge/Windows-0078D6?style=flat&logo=windows&logoColor=white)](https://www.microsoft.com/windows)
 [![Python](https://img.shields.io/badge/Python-3776AB?style=flat&logo=python&logoColor=white)](https://www.python.org/downloads/)
+[![PySide6](https://img.shields.io/badge/PySide-6-green?style=flat&logo=qt)](https://doc.qt.io/qtforpython-6/)
 
 
 </div>
 
-A `.sh` script runner for anyone tired of hopping between folders and scripts. Scans your selected folder to build a centralized hub, opens a new terminal per script for easier project management and auto-detects Python environments.
+A `.sh` script runner for anyone tired of hopping between folders and scripts. It scans your selected folder to build a centralized hub, opens a new terminal per script for easier project management and auto-detects Python environments.
 
+![interface](assets/interface.png)
 
 ## 🛠️ Features
 
-![example](assets/example.png)
+### Toolbar
 
-### Project
+Toolbar for easy configuration access:
 
-- **Select project folder** — Project → Set project path to choose any project root. the path is saved for next runs
-- **Refresh** — Project → Refresh to rescan scripts without restarting
+- **Project** — Set project path | Refresh to rescan scripts
+- **Terminal** — Set Git Bash path 
+- **Venv** — Venv activate path for scripts that interact with Python | Clear venv path to revert to auto-detect.
 
-### Configuration
+All of the above, plus per-script categories and favorites, are stored in `config.json` in the app directory.
 
-- **Terminal** — Set Git Bash path (prompted on first run)
-- **Venv** — Optional **venv activate path** (for scripts you mark as backend; shows "Auto" when not set); **Clear venv path** to revert to auto-detect
+### Script cards
 
-### Table
+Scripts are shown in a responsive card grid. Each card has:
 
-- **File name** — Path relative to the project root
-- **Category** — Defaulted by folder name (`backend/` or `frontend/`), but you can change it per script
-- **Env** — Auto-detected in the script folder: `.venv`, `venv`, or `node_modules`; for **backend**, a configured venv path overrides auto-detect
-- **Status** — Idle, Running, Stopped
-- **Run** — Opens Git Bash with CWD set to the script’s folder
-- **Kill** — Stops only the terminal launched by the app
+- **File name** — Relative to project root.
+- **Favorite** — Star to pin; favorites sort first.
+- **Category** — None, backend, or frontend; default from folder name, editable per script.
+- **Env** — Shown per script.
+- **Status** — Idle, Running, or Stopped.
+- **Run** — Opens the configured terminal with CWD = script’s folder.
+- **Kill** — Stops only the process tree launched by the app for that script.
+
+### Metrics
+
+When a script is running, each card shows these live metrics (updated every second):
+
+- **PID** — Process ID.
+- **CPU %** — Current CPU usage.
+- **RAM (RSS)** — Resident memory in use (MB).
+- **RAM %** — Share of system RAM.
+- **Elapsed** — Time since the script started.
+- **Peak memory** — Maximum RSS reached (MB).
+- **CPU time** — Total CPU time consumed.
+- **Threads** — Number of threads.
+
+### Search and filter
+
+- **Search** — Type in the search box to filter cards by folder or file name (live filter).
+- **Folder** — Dropdown to show "All" or only scripts under a first-level folder (e.g. backend, frontend).
 
 
 ## 📁 How scripts are discovered
 
-The app scans the **selected folder** recursively and lists every `.sh` file. 
+The app scans the **selected folder** recursively and lists every `.sh` file. Names are shown relative to the project (e.g. `backend/run.sh`, `scripts/docker-up.sh`). Scripts **run with CWD = their own folder**, not the project root.
 
-- **File name** — Shown as path relative to the project (e.g. `backend/run.sh`, `frontend/dev.sh`, `scripts/docker-up.sh`)
-- **Working directory** — Scripts run relative to their own folder, not the project root
-- **Env** — Environment is automatically detected in the script's folder (`.venv`, `venv`, `node_modules`). For backend scripts with a configured venv path, that path is used instead
+**Env** is detected in the script’s folder: `.venv`, `venv`, or `node_modules`. For scripts in category **backend**, a configured venv path (see Configuration) overrides that.
 
 Example layout (any structure works):
 
 ```
 your-project/
-├── backend/          # .sh scripts; category auto = backend; .venv/venv auto-detected
-├── frontend/         # .sh scripts; category auto = frontend; node_modules shown if present
-├── api/              # your own name; category defaults to None
-└── scripts/          # category None; CWD = scripts/ when you run
+├── backend/          # auto = backend; .venv/venv 
+├── frontend/         # auto = frontend; node_modules
+├── api/              # category to None
+└── scripts/          # category None
 ```
 
 
@@ -66,7 +85,13 @@ git clone https://github.com/leobrqz/ShScriptHub.git
 cd ShScriptHub
 ```
 
-### 2. Run the app
+### 2. Install dependencies
+
+```bash
+pip install -r requirements.txt
+```
+
+### 3. Run the app
 
 ```bash
 python src/main.py
