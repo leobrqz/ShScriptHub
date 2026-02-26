@@ -4,14 +4,14 @@ Centralized palette and application stylesheet.
 
 DARK_PALETTE = {
     "bg_main": "#0d0f11",
-    "bg_sidebar": "#111316",
+    "bg_sidebar": "#0d0f11",
     "bg_detail": "#0d0f11",
     "bg_card": "#141618",
     "border": "#2a2d31",
     "text_primary": "#e5e7eb",
     "text_secondary": "#9ca3af",
     "text_title": "#f9fafb",
-    "text_muted": "#6b7280",
+    "text_muted": "#9ca3af",
     "accent": "#2563eb",
     "sidebar_selected_bg": "#1e2a3a",
     "sidebar_selected_border": "#2563eb",
@@ -19,7 +19,7 @@ DARK_PALETTE = {
     "dot_stopped": "#4b5563",
     "menu_bg": "#1a1d21",
     "menu_item_hover": "#23272e",
-    "top_bar_bg": "#141618",
+    "top_bar_bg": "#0d0f11",
     "run_btn_bg": "#15803d",
     "run_btn_hover": "#166534",
     "run_btn_pressed": "#14532d",
@@ -36,11 +36,19 @@ DARK_PALETTE = {
     "scrollbar_handle_hover": "#3f4349",
     "graphs_box_bg": "#0a0c0e",
     "input_bg": "#1a1d21",
+    "sh_bg": "#0a0c0e",
+    "sh_text": "#e5e7eb",
+    "sh_comment": "#6b7280",
+    "sh_keyword": "#60a5fa",
+    "sh_string": "#86efac",
+    "sh_variable": "#fbbf24",
+    "sh_shebang": "#a78bfa",
+    "sh_number": "#f9a8d4",
 }
 
 LIGHT_PALETTE = {
     "bg_main": "#f0f2f5",
-    "bg_sidebar": "#f8f9fa",
+    "bg_sidebar": "#f0f2f5",
     "bg_detail": "#f0f2f5",
     "bg_card": "#ffffff",
     "border": "#e5e7eb",
@@ -54,8 +62,8 @@ LIGHT_PALETTE = {
     "dot_running": "#15803d",
     "dot_stopped": "#9ca3af",
     "menu_bg": "#ffffff",
-    "menu_item_hover": "#f3f4f6",
-    "top_bar_bg": "#ffffff",
+    "menu_item_hover": "#e5e7eb",
+    "top_bar_bg": "#f0f2f5",
     "run_btn_bg": "#15803d",
     "run_btn_hover": "#166534",
     "run_btn_pressed": "#14532d",
@@ -72,6 +80,14 @@ LIGHT_PALETTE = {
     "scrollbar_handle_hover": "#6b7280",
     "graphs_box_bg": "#ffffff",
     "input_bg": "#ffffff",
+    "sh_bg": "#f8f9fa",
+    "sh_text": "#1f2937",
+    "sh_comment": "#9ca3af",
+    "sh_keyword": "#1d4ed8",
+    "sh_string": "#15803d",
+    "sh_variable": "#b45309",
+    "sh_shebang": "#7c3aed",
+    "sh_number": "#db2777",
 }
 
 
@@ -113,6 +129,10 @@ QLabel#sectionHeader {{
     font-weight: 700;
     letter-spacing: 0.8px;
 }}
+QLabel#folderLabel {{
+    color: {p["text_muted"]};
+    font-weight: 600;
+}}
 QWidget#sidebarRow {{
     border-radius: 4px;
     border-left: 2px solid transparent;
@@ -138,6 +158,10 @@ QWidget#detailPanel {{
 QLabel#detailTitle {{
     color: {p["text_title"]};
     font-size: 12pt;
+    font-weight: 700;
+}}
+QLabel#detailSectionHeader {{
+    color: {p["text_title"]};
     font-weight: 700;
 }}
 QFrame#graphsBox {{
@@ -246,6 +270,18 @@ QSplitter::handle {{
 QFrame#divider {{
     max-height: 1px;
     background-color: {p["border"]};
+}}
+QFrame#scriptViewer {{
+    background-color: {p["sh_bg"]};
+    border: 1px solid {p["border"]};
+    border-radius: 6px;
+}}
+QFrame#scriptViewer QPlainTextEdit {{
+    background-color: {p["sh_bg"]};
+    color: {p["sh_text"]};
+    border: none;
+    padding: 4px 8px;
+    selection-background-color: {p["accent"]};
 }}
 QScrollBar:vertical {{
     background: transparent;

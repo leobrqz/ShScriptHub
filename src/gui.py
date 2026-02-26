@@ -2,8 +2,8 @@ import os
 import time
 from typing import Callable, Optional
 
-from PySide6.QtCore import Qt, QTimer
-from PySide6.QtGui import QAction, QWheelEvent
+from PySide6.QtCore import QRect, QRegularExpression, QSize, Qt, QTimer
+from PySide6.QtGui import QAction, QColor, QFont, QPainter, QSyntaxHighlighter, QTextCharFormat, QTextCursor, QWheelEvent
 from PySide6.QtWidgets import (
     QApplication,
     QComboBox,
@@ -16,6 +16,7 @@ from PySide6.QtWidgets import (
     QMainWindow,
     QMenu,
     QMessageBox,
+    QPlainTextEdit,
     QPushButton,
     QScrollArea,
     QSplitter,
@@ -53,6 +54,153 @@ class NoWheelComboBox(QComboBox):
 
     def wheelEvent(self, event: QWheelEvent) -> None:
         event.ignore()
+
+
+class LineNumberGutter(QWidget):
+    """Paints line numbers alongside a QPlainTextEdit."""
+
+    PADDING = 8  # px on each side of the number
+
+    def __init__(self, editor: "QPlainTextEdit", palette: dict):
+        super().__init__(editor.parent())
+        self._editor = editor
+        self._update_colors(palette)
+
+        editor.blockCountChanged.connect(self._update_width)
+        editor.updateRequest.connect(self._on_update_request)
+        self._update_width()
+
+    def _update_colors(self, palette: dict) -> None:
+        self._bg_color = QColor(palette.get("sh_bg", "#1a1a1a"))
+        self._fg_color = QColor(palette["text_muted"])
+
+    def update_palette(self, palette: dict) -> None:
+        self._update_colors(palette)
+        self.update()
+
+    def gutter_width(self) -> int:
+        digits = max(len(str(self._editor.blockCount())), 2)
+        return self.PADDING + self._editor.fontMetrics().horizontalAdvance("9") * digits + self.PADDING
+
+    def _update_width(self) -> None:
+        self._editor.setViewportMargins(self.gutter_width(), 0, 0, 0)
+        self._reposition()
+
+    def _reposition(self) -> None:
+        cr = self._editor.contentsRect()
+        self.setGeometry(QRect(cr.left(), cr.top(), self.gutter_width(), cr.height()))
+
+    def _on_update_request(self, rect: QRect, dy: int) -> None:
+        if dy:
+            self.scroll(0, dy)
+        else:
+            self.update(0, rect.y(), self.width(), rect.height())
+        if rect.contains(self._editor.viewport().rect()):
+            self._update_width()
+
+    def sizeHint(self) -> QSize:
+        return QSize(self.gutter_width(), 0)
+
+    def paintEvent(self, event) -> None:
+        painter = QPainter(self)
+        painter.fillRect(event.rect(), self._bg_color)
+
+        block = self._editor.firstVisibleBlock()
+        block_number = block.blockNumber()
+        offset = self._editor.contentOffset()
+        top = self._editor.blockBoundingGeometry(block).translated(offset).top()
+        bottom = top + self._editor.blockBoundingRect(block).height()
+
+        font = self._editor.font()
+        painter.setFont(font)
+
+        while block.isValid() and top <= event.rect().bottom():
+            if block.isVisible() and bottom >= event.rect().top():
+                painter.setPen(self._fg_color)
+                painter.drawText(
+                    0,
+                    int(top),
+                    self.width() - self.PADDING,
+                    self._editor.fontMetrics().height(),
+                    Qt.AlignRight | Qt.AlignVCenter,
+                    str(block_number + 1),
+                )
+            block = block.next()
+            block_number += 1
+            top = bottom
+            bottom = top + self._editor.blockBoundingRect(block).height()
+
+
+class ShellHighlighter(QSyntaxHighlighter):
+    """Read-only syntax highlighter for .sh scripts."""
+
+    def __init__(self, parent, palette: dict):
+        super().__init__(parent)
+        self._rules: list[tuple[QRegularExpression, QTextCharFormat]] = []
+        self._build_rules(palette)
+
+    def _fmt(self, color: str, bold: bool = False) -> QTextCharFormat:
+        fmt = QTextCharFormat()
+        fmt.setForeground(QColor(color))
+        if bold:
+            fmt.setFontWeight(QFont.Bold)
+        return fmt
+
+    def _build_rules(self, palette: dict) -> None:
+        self._rules = []
+
+        # Shebang line (#!...)
+        self._rules.append((
+            QRegularExpression(r"^#!.*$"),
+            self._fmt(palette["sh_shebang"], bold=True),
+        ))
+        # Comments (# not shebang)
+        self._rules.append((
+            QRegularExpression(r"(?<!#!)#[^\n]*"),
+            self._fmt(palette["sh_comment"]),
+        ))
+        # Double-quoted strings
+        self._rules.append((
+            QRegularExpression(r'"[^"\\]*(?:\\.[^"\\]*)*"'),
+            self._fmt(palette["sh_string"]),
+        ))
+        # Single-quoted strings
+        self._rules.append((
+            QRegularExpression(r"'[^']*'"),
+            self._fmt(palette["sh_string"]),
+        ))
+        # Variables: $VAR, ${VAR}, $1 etc.
+        self._rules.append((
+            QRegularExpression(r"\$\{?[A-Za-z_][A-Za-z0-9_]*\}?|\$[0-9@#\*\?]"),
+            self._fmt(palette["sh_variable"]),
+        ))
+        # Keywords
+        keywords = (
+            r"\b(if|then|else|elif|fi|for|while|do|done|case|esac|in|"
+            r"function|return|exit|export|local|declare|readonly|shift|"
+            r"source|echo|printf|cd|mkdir|rm|cp|mv|chmod|chown|grep|"
+            r"sed|awk|cat|ls|pwd|set|unset|true|false|test|exec)\b"
+        )
+        self._rules.append((
+            QRegularExpression(keywords),
+            self._fmt(palette["sh_keyword"], bold=True),
+        ))
+        # Numbers
+        self._rules.append((
+            QRegularExpression(r"\b[0-9]+\b"),
+            self._fmt(palette["sh_number"]),
+        ))
+
+    def update_palette(self, palette: dict) -> None:
+        self._build_rules(palette)
+        self.rehighlight()
+
+    def highlightBlock(self, text: str) -> None:
+        for pattern, fmt in self._rules:
+            it = pattern.globalMatch(text)
+            while it.hasNext():
+                match = it.next()
+                self.setFormat(match.capturedStart(), match.capturedLength(), fmt)
 
 
 class ShScriptHubApp(QMainWindow):
@@ -176,6 +324,8 @@ class ShScriptHubApp(QMainWindow):
         save_theme(self._theme)
         QApplication.instance().setStyleSheet(get_stylesheet(self._theme))
         self._theme_btn.setText("☀ Light" if self._theme == "dark" else "🌙 Dark")
+        self._sh_highlighter.update_palette(self._palette)
+        self._line_gutter.update_palette(self._palette)
 
     def _build_paths_row(self) -> QWidget:
         row_widget = QWidget()
@@ -288,7 +438,7 @@ class ShScriptHubApp(QMainWindow):
         self._detail_content = QWidget()
         content = QVBoxLayout(self._detail_content)
         content.setContentsMargins(0, 0, 0, 0)
-        content.setSpacing(12)
+        content.setSpacing(8)
         root.addWidget(self._detail_content, 1)
 
         self.detail_title = QLabel("")
@@ -332,11 +482,13 @@ class ShScriptHubApp(QMainWindow):
         action_row.addStretch()
         content.addLayout(action_row)
 
-        metrics_header = QLabel("Metrics (selected script)")
-        metrics_header.setStyleSheet(f"color: {self._palette['text_title']}; font-weight: 700;")
+        metrics_header = QLabel("Metrics")
+        metrics_header.setObjectName("detailSectionHeader")
         content.addWidget(metrics_header)
 
         metrics_grid = QGridLayout()
+        metrics_grid.setVerticalSpacing(2)
+        metrics_grid.setHorizontalSpacing(8)
         metric_specs = [
             ("CPU %", "detail_cpu_pct_label"),
             ("RAM (RSS)", "detail_ram_rss_label"),
@@ -354,14 +506,31 @@ class ShScriptHubApp(QMainWindow):
             metrics_grid.addWidget(value, r, c + 1)
         content.addLayout(metrics_grid)
 
-        self.graphs_box = QFrame()
-        self.graphs_box.setObjectName("graphsBox")
-        graphs_layout = QVBoxLayout(self.graphs_box)
-        graphs_layout.setContentsMargins(12, 12, 12, 12)
-        graphs_placeholder = QLabel("graphs and other metrics will be here in the future")
-        graphs_placeholder.setAlignment(Qt.AlignCenter)
-        graphs_layout.addWidget(graphs_placeholder)
-        content.addWidget(self.graphs_box, 1)
+        script_header = QLabel("Script")
+        script_header.setObjectName("detailSectionHeader")
+        content.addWidget(script_header)
+
+        # Container gives the gutter a shared parent with the editor
+        viewer_container = QFrame()
+        viewer_container.setObjectName("scriptViewer")
+        viewer_container_layout = QVBoxLayout(viewer_container)
+        viewer_container_layout.setContentsMargins(0, 0, 0, 0)
+        viewer_container_layout.setSpacing(0)
+
+        self.script_viewer = QPlainTextEdit(viewer_container)
+        self.script_viewer.setReadOnly(True)
+        viewer_font = QFont("Consolas")
+        viewer_font.setStyleHint(QFont.Monospace)
+        viewer_font.setPointSize(9)
+        self.script_viewer.setFont(viewer_font)
+        self.script_viewer.setLineWrapMode(QPlainTextEdit.NoWrap)
+        # Remove the editor's own frame — the container provides it
+        self.script_viewer.setFrameShape(QFrame.NoFrame)
+        viewer_container_layout.addWidget(self.script_viewer)
+        content.addWidget(viewer_container, 1)
+
+        self._sh_highlighter = ShellHighlighter(self.script_viewer.document(), self._palette)
+        self._line_gutter = LineNumberGutter(self.script_viewer, self._palette)
 
         self.detail_run_btn.clicked.connect(self._run_selected_script)
         self.detail_kill_btn.clicked.connect(self._kill_selected_script)
@@ -620,6 +789,17 @@ class ShScriptHubApp(QMainWindow):
             ):
                 lbl.setText(PLACEHOLDER)
 
+        self._load_script_viewer(path)
+
+    def _load_script_viewer(self, path: str) -> None:
+        try:
+            with open(path, encoding="utf-8", errors="replace") as f:
+                content = f.read()
+        except OSError:
+            content = f"# Could not read file: {path}"
+        self.script_viewer.setPlainText(content)
+        self.script_viewer.moveCursor(QTextCursor.MoveOperation.Start)
+
     # ------------------------------------------------------------------
     # Sidebar – favorites (rebuilt on load/favorite-toggle only)
     # ------------------------------------------------------------------
@@ -688,7 +868,7 @@ class ShScriptHubApp(QMainWindow):
             toggle_btn.setObjectName("folderToggleBtn")
             toggle_btn.setFixedSize(22, 22)
             folder_lbl = QLabel(folder)
-            folder_lbl.setStyleSheet(f"font-weight: 600; color: {self._palette['text_secondary']};")
+            folder_lbl.setObjectName("folderLabel")
             header_layout.addWidget(toggle_btn, 0)
             header_layout.addWidget(folder_lbl, 1)
             self.tree_layout.addWidget(folder_header)

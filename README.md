@@ -64,6 +64,15 @@ When a script is running, the detail panel shows these metrics updated every sec
 - **CPU time** — Total CPU time consumed.
 - **Threads** — Number of threads.
 
+### Script viewer
+
+The detail panel includes a read-only viewer that displays the selected script's source code with syntax highlighting:
+
+- Shell keywords, strings, variables, comments, shebangs, and numbers are each coloured distinctly.
+- Line numbers are shown in the left gutter.
+- Horizontally scrollable for long lines.
+- Colors adapt to the active theme (dark or light).
+
 
 ## How scripts are discovered
 
