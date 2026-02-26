@@ -16,35 +16,46 @@ A `.sh` script runner for anyone tired of hopping between folders and scripts. I
 
 ![interface](assets/interface.png)
 
-## 🛠️ Features
+## Features
 
 ### Toolbar
 
-Toolbar for easy configuration access:
+Compact toolbar at the top of the window:
 
 - **Project** — Set project path | Refresh to rescan scripts
-- **Terminal** — Set Git Bash path 
-- **Venv** — Venv activate path for scripts that interact with Python | Clear venv path to revert to auto-detect.
+- **Terminal** — Set Git Bash path
+- **Venv** — Set venv activate path for scripts that interact with Python | Clear venv path to revert to auto-detect
+- **Theme toggle** — Switch between dark and light themes (persisted across restarts)
 
-All of the above, plus per-script categories and favorites, are stored in `config.json` in the app directory.
+All settings, per-script categories, and favorites are stored in `config.json` in the app directory.
 
-### Script cards
+### Sidebar
 
-Scripts are shown in a responsive card grid. Each card has:
+Scripts are listed in a collapsible folder tree on the left panel:
 
-- **File name** — Relative to project root.
-- **Favorite** — Star to pin; favorites sort first.
-- **Category** — None, backend, or frontend; default from folder name, editable per script.
-- **Env** — Shown per script.
+- **Favorites section** — Favorited scripts are pinned at the top.
+- **Project tree** — Scripts grouped by their first-level folder. Folders can be expanded or collapsed.
+- **Search** — Filters the tree by folder or file name as you type.
+- **Filter** — Dropdown to show All, Backend, Frontend, or Running scripts only.
+- **Running indicator** — A dot next to each script shows whether it is currently running.
+- **Selection** — Clicking a script loads its details in the detail panel.
+
+### Detail panel
+
+The right panel shows the selected script's full information and controls:
+
+- **Name and path** — Script name and relative path from project root.
+- **Category** — Per-script category selector (None, backend, frontend). Defaults are inferred from folder name.
+- **Env** — Detected environment for the script (`.venv`, `venv`, `node_modules`, or configured venv path).
 - **Status** — Idle, Running, or Stopped.
-- **Run** — Opens the configured terminal with CWD = script’s folder.
+- **Favorite** — Star button to pin or unpin the script.
+- **Run** — Opens the configured terminal with CWD set to the script's folder.
 - **Kill** — Stops only the process tree launched by the app for that script.
 
-### Metrics
+### Live metrics
 
-When a script is running, each card shows these live metrics (updated every second):
+When a script is running, the detail panel shows these metrics updated every second:
 
-- **PID** — Process ID.
 - **CPU %** — Current CPU usage.
 - **RAM (RSS)** — Resident memory in use (MB).
 - **RAM %** — Share of system RAM.
@@ -53,30 +64,25 @@ When a script is running, each card shows these live metrics (updated every seco
 - **CPU time** — Total CPU time consumed.
 - **Threads** — Number of threads.
 
-### Search and filter
 
-- **Search** — Type in the search box to filter cards by folder or file name (live filter).
-- **Folder** — Dropdown to show "All" or only scripts under a first-level folder (e.g. backend, frontend).
+## How scripts are discovered
 
+The app scans the **selected folder** recursively and lists every `.sh` file. Names are shown relative to the project root (e.g. `backend/run.sh`, `scripts/docker-up.sh`). Scripts **run with CWD = their own folder**, not the project root.
 
-## 📁 How scripts are discovered
-
-The app scans the **selected folder** recursively and lists every `.sh` file. Names are shown relative to the project (e.g. `backend/run.sh`, `scripts/docker-up.sh`). Scripts **run with CWD = their own folder**, not the project root.
-
-**Env** is detected in the script’s folder: `.venv`, `venv`, or `node_modules`. For scripts in category **backend**, a configured venv path (see Configuration) overrides that.
+**Env** is detected in the script's folder: `.venv`, `venv`, or `node_modules`. For scripts in category **backend**, a configured venv path (see Toolbar) overrides auto-detection.
 
 Example layout (any structure works):
 
 ```
 your-project/
-├── backend/          # auto = backend; .venv/venv 
+├── backend/          # auto = backend; .venv/venv
 ├── frontend/         # auto = frontend; node_modules
-├── api/              # category to None
+├── api/              # category None
 └── scripts/          # category None
 ```
 
 
-## ⚙️ Setup & Run
+## Setup & Run
 
 ### 1. Clone or open the project
 

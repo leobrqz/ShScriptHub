@@ -1,22 +1,61 @@
 """
 Centralized palette and application stylesheet.
-A future theme swap (e.g. dark) replaces PALETTE and reapplies the stylesheet.
 """
 
-# (light theme).
-PALETTE = {
+DARK_PALETTE = {
+    "bg_main": "#0d0f11",
+    "bg_sidebar": "#111316",
+    "bg_detail": "#0d0f11",
+    "bg_card": "#141618",
+    "border": "#2a2d31",
+    "text_primary": "#e5e7eb",
+    "text_secondary": "#9ca3af",
+    "text_title": "#f9fafb",
+    "text_muted": "#6b7280",
+    "accent": "#2563eb",
+    "sidebar_selected_bg": "#1e2a3a",
+    "sidebar_selected_border": "#2563eb",
+    "dot_running": "#22c55e",
+    "dot_stopped": "#4b5563",
+    "menu_bg": "#1a1d21",
+    "menu_item_hover": "#23272e",
+    "top_bar_bg": "#141618",
+    "run_btn_bg": "#15803d",
+    "run_btn_hover": "#166534",
+    "run_btn_pressed": "#14532d",
+    "kill_btn_bg": "#b91c1c",
+    "kill_btn_hover": "#991b1b",
+    "kill_btn_pressed": "#7f1d1d",
+    "btn_text": "#ffffff",
+    "fav_btn": "#d97706",
+    "fav_btn_hover": "#f59e0b",
+    "status_running": "#22c55e",
+    "status_stopped": "#6b7280",
+    "status_placeholder": "#4b5563",
+    "scrollbar_handle": "#2a2d31",
+    "scrollbar_handle_hover": "#3f4349",
+    "graphs_box_bg": "#0a0c0e",
+    "input_bg": "#1a1d21",
+}
+
+LIGHT_PALETTE = {
     "bg_main": "#f0f2f5",
+    "bg_sidebar": "#f8f9fa",
+    "bg_detail": "#f0f2f5",
     "bg_card": "#ffffff",
     "border": "#e5e7eb",
     "text_primary": "#1f2937",
     "text_secondary": "#374151",
     "text_title": "#111827",
     "text_muted": "#6b7280",
-    "menu_item_selected": "#e5e7eb",
-    "menu_item_selected_sub": "#f3f4f6",
-    "combo_hover": "#9ca3af",
-    "scrollbar_handle": "#9ca3af",
-    "scrollbar_handle_hover": "#6b7280",
+    "accent": "#2563eb",
+    "sidebar_selected_bg": "#e5e7eb",
+    "sidebar_selected_border": "#2563eb",
+    "dot_running": "#15803d",
+    "dot_stopped": "#9ca3af",
+    "menu_bg": "#ffffff",
+    "menu_item_hover": "#f3f4f6",
+    "top_bar_bg": "#ffffff",
     "run_btn_bg": "#15803d",
     "run_btn_hover": "#166534",
     "run_btn_pressed": "#14532d",
@@ -26,159 +65,216 @@ PALETTE = {
     "btn_text": "#ffffff",
     "fav_btn": "#d97706",
     "fav_btn_hover": "#b45309",
-    "status_placeholder": "#6b7280",
     "status_running": "#15803d",
     "status_stopped": "#64748b",
+    "status_placeholder": "#6b7280",
+    "scrollbar_handle": "#9ca3af",
+    "scrollbar_handle_hover": "#6b7280",
+    "graphs_box_bg": "#ffffff",
+    "input_bg": "#ffffff",
 }
 
 
-def get_stylesheet() -> str:
-    """Build the full application QSS from PALETTE. No hardcoded colors."""
-    p = PALETTE
+def get_stylesheet(theme: str = "dark") -> str:
+    p = DARK_PALETTE if theme == "dark" else LIGHT_PALETTE
     return f"""
-QApplication, QMainWindow, QWidget, QScrollArea {{
+QApplication, QMainWindow, QWidget {{
     font-family: "Segoe UI", sans-serif;
     font-size: 9pt;
-    background-color: {p["bg_main"]};
     color: {p["text_primary"]};
 }}
-QMenuBar {{
+QMainWindow {{
     background-color: {p["bg_main"]};
-    padding: 4px 0;
-    border-bottom: 1px solid {p["border"]};
 }}
-QMenuBar::item {{
-    padding: 8px 14px;
+QWidget {{
     background-color: transparent;
-    border-radius: 4px;
-}}
-QMenuBar::item:selected {{
-    background-color: {p["menu_item_selected"]};
-}}
-QMenu {{
-    background-color: {p["bg_card"]};
-    padding: 3px 0;
-    border: 1px solid {p["border"]};
-    border-radius: 6px;
-}}
-QMenu::item {{
-    padding: 5px 12px;
-}}
-QMenu::item:selected {{
-    background-color: {p["menu_item_selected_sub"]};
 }}
 QLabel {{
     color: {p["text_secondary"]};
+}}
+QWidget#topBar {{
+    background-color: {p["top_bar_bg"]};
+    border-bottom: 1px solid {p["border"]};
+}}
+QWidget#pathsRow {{
+    background-color: {p["bg_main"]};
+    border-bottom: 1px solid {p["border"]};
+}}
+QFrame#sidebarPanel {{
+    background-color: {p["bg_sidebar"]};
+    border-right: 1px solid {p["border"]};
+}}
+QWidget#favoritesSection, QWidget#treeSection {{
+    background-color: transparent;
+}}
+QLabel#sectionHeader {{
+    color: {p["text_muted"]};
+    font-size: 8pt;
+    font-weight: 700;
+    letter-spacing: 0.8px;
+}}
+QWidget#sidebarRow {{
+    border-radius: 4px;
+    border-left: 2px solid transparent;
+}}
+QWidget#sidebarRow:hover {{
+    background-color: {p["menu_item_hover"]};
+}}
+QWidget#sidebarRow[selected="true"] {{
+    background-color: {p["sidebar_selected_bg"]};
+    border-left: 2px solid {p["sidebar_selected_border"]};
+}}
+QLabel#dotLabel[running="true"] {{
+    color: {p["dot_running"]};
+    font-weight: 700;
+}}
+QLabel#dotLabel[running="false"] {{
+    color: {p["dot_stopped"]};
+    font-weight: 700;
+}}
+QWidget#detailPanel {{
+    background-color: {p["bg_detail"]};
+}}
+QLabel#detailTitle {{
+    color: {p["text_title"]};
+    font-size: 12pt;
+    font-weight: 700;
+}}
+QFrame#graphsBox {{
+    background-color: {p["graphs_box_bg"]};
+    border: 1px solid {p["border"]};
+    border-radius: 6px;
 }}
 QPushButton {{
     min-width: 56px;
     padding: 8px 14px;
     border-radius: 6px;
     font-weight: 500;
+    border: none;
 }}
-QPushButton#runBtn, QFrame#scriptCard QPushButton#runBtn {{
+QPushButton#topBarBtn {{
+    background-color: transparent;
+    color: {p["text_primary"]};
+    border-radius: 3px;
+    min-width: 0;
+    padding: 2px 8px;
+    font-size: 12px;
+}}
+QPushButton#topBarBtn:hover {{
+    background-color: {p["menu_item_hover"]};
+}}
+QPushButton#folderToggleBtn {{
+    background-color: transparent;
+    color: {p["text_secondary"]};
+    min-width: 0;
+    max-width: 22px;
+    padding: 0;
+    border-radius: 3px;
+    font-size: 8pt;
+}}
+QPushButton#folderToggleBtn:hover {{
+    background-color: {p["menu_item_hover"]};
+}}
+QPushButton#runBtn {{
     background-color: {p["run_btn_bg"]};
     color: {p["btn_text"]};
-    border: none;
 }}
-QPushButton#runBtn:hover, QFrame#scriptCard QPushButton#runBtn:hover {{
+QPushButton#runBtn:hover {{
     background-color: {p["run_btn_hover"]};
-    color: {p["btn_text"]};
 }}
-QPushButton#runBtn:pressed, QFrame#scriptCard QPushButton#runBtn:pressed {{
+QPushButton#runBtn:pressed {{
     background-color: {p["run_btn_pressed"]};
-    color: {p["btn_text"]};
 }}
-QPushButton#killBtn, QFrame#scriptCard QPushButton#killBtn {{
+QPushButton#killBtn {{
     background-color: {p["kill_btn_bg"]};
     color: {p["btn_text"]};
-    border: none;
 }}
-QPushButton#killBtn:hover, QFrame#scriptCard QPushButton#killBtn:hover {{
+QPushButton#killBtn:hover {{
     background-color: {p["kill_btn_hover"]};
-    color: {p["btn_text"]};
 }}
-QPushButton#killBtn:pressed, QFrame#scriptCard QPushButton#killBtn:pressed {{
+QPushButton#killBtn:pressed {{
     background-color: {p["kill_btn_pressed"]};
-    color: {p["btn_text"]};
 }}
-QPushButton#favBtn, QFrame#scriptCard QPushButton#favBtn {{
+QPushButton#favBtn {{
     font-size: 14pt;
-    border: none;
-    background: transparent;
+    min-width: 32px;
+    background-color: transparent;
     color: {p["fav_btn"]};
+    padding: 4px 8px;
 }}
-QPushButton#favBtn:hover, QFrame#scriptCard QPushButton#favBtn:hover {{
+QPushButton#favBtn:hover {{
     color: {p["fav_btn_hover"]};
 }}
-QComboBox {{
-    min-width: 100px;
-    padding: 6px 10px;
+QLineEdit#searchEdit, QComboBox#categoryCombo, QComboBox#detailCategoryCombo {{
+    background-color: {p["input_bg"]};
+    color: {p["text_primary"]};
     border: 1px solid {p["border"]};
     border-radius: 6px;
-    background-color: {p["bg_card"]};
-}}
-QComboBox:hover {{
-    border-color: {p["combo_hover"]};
+    padding: 6px 10px;
 }}
 QComboBox::drop-down {{
     border: none;
-    width: 20px;
+    width: 18px;
 }}
-QLineEdit#searchEdit {{
-    padding: 10px 14px;
+QComboBox QAbstractItemView {{
+    background-color: {p["menu_bg"]};
     border: 1px solid {p["border"]};
-    border-radius: 8px;
-    background-color: {p["bg_card"]};
-    min-height: 20px;
+    color: {p["text_primary"]};
+    selection-background-color: {p["menu_item_hover"]};
 }}
-QComboBox#folderCombo {{
-    padding: 8px 12px;
+QMenu {{
+    background-color: {p["menu_bg"]};
     border: 1px solid {p["border"]};
-    border-radius: 8px;
-    background-color: {p["bg_card"]};
+    border-radius: 6px;
+    padding: 4px 0;
 }}
-QFrame#separator {{
-    background-color: {p["border"]};
-    max-height: 1px;
+QMenu::item {{
+    color: {p["text_primary"]};
+    padding: 6px 12px;
+}}
+QMenu::item:selected {{
+    background-color: {p["menu_item_hover"]};
 }}
 QScrollArea {{
     border: none;
+    background-color: transparent;
 }}
-QWidget#scrollViewport, QWidget#scriptsContainer {{
-    background-color: {p["bg_main"]};
+QSplitter::handle {{
+    background-color: {p["border"]};
+    width: 1px;
+}}
+QFrame#divider {{
+    max-height: 1px;
+    background-color: {p["border"]};
 }}
 QScrollBar:vertical {{
-    background: {p["bg_main"]};
+    background: transparent;
     width: 10px;
-    border-radius: 5px;
-    margin: 0;
+    margin: 2px 0;
 }}
 QScrollBar::handle:vertical {{
     background: {p["scrollbar_handle"]};
     border-radius: 5px;
-    min-height: 30px;
+    min-height: 24px;
 }}
 QScrollBar::handle:vertical:hover {{
     background: {p["scrollbar_handle_hover"]};
 }}
 QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {{
     height: 0;
-    background: {p["bg_main"]};
 }}
 QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical {{
-    background: {p["bg_main"]};
+    background: transparent;
 }}
 QScrollBar:horizontal {{
-    background: {p["bg_main"]};
+    background: transparent;
     height: 10px;
-    border-radius: 5px;
-    margin: 0;
+    margin: 0 2px;
 }}
 QScrollBar::handle:horizontal {{
     background: {p["scrollbar_handle"]};
     border-radius: 5px;
-    min-width: 30px;
+    min-width: 24px;
 }}
 QScrollBar::handle:horizontal:hover {{
     background: {p["scrollbar_handle_hover"]};
@@ -187,27 +283,6 @@ QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal {{
     width: 0;
 }}
 QScrollBar::add-page:horizontal, QScrollBar::sub-page:horizontal {{
-    background: {p["bg_main"]};
-}}
-QFrame#scriptCard {{
-    background-color: {p["bg_card"]};
-    border: 1px solid {p["border"]};
-    border-radius: 10px;
-}}
-QFrame#scriptCard QLabel, QFrame#scriptCard QComboBox {{
-    background-color: transparent;
-}}
-QFrame#scriptCard QLabel {{
-    color: {p["text_muted"]};
-}}
-QFrame#scriptCard QLabel#cardTitleLabel {{
-    font-weight: 600;
-    font-size: 11pt;
-    color: {p["text_title"]};
-}}
-QFrame#scriptCard QLabel#metricValueLabel {{
-    color: {p["text_secondary"]};
+    background: transparent;
 }}
 """
-
-APP_STYLESHEET = get_stylesheet()

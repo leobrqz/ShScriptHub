@@ -1,47 +1,51 @@
 import os
 import time
+from typing import Callable, Optional
+
+from PySide6.QtCore import Qt, QTimer
+from PySide6.QtGui import QAction, QWheelEvent
 from PySide6.QtWidgets import (
-    QMainWindow,
-    QWidget,
-    QVBoxLayout,
-    QHBoxLayout,
-    QGridLayout,
-    QLabel,
-    QLineEdit,
-    QPushButton,
+    QApplication,
     QComboBox,
     QFileDialog,
-    QMessageBox,
-    QScrollArea,
     QFrame,
-    QMenuBar,
+    QGridLayout,
+    QHBoxLayout,
+    QLabel,
+    QLineEdit,
+    QMainWindow,
     QMenu,
-    QSizePolicy,
-    QApplication,
+    QMessageBox,
+    QPushButton,
+    QScrollArea,
+    QSplitter,
+    QVBoxLayout,
+    QWidget,
 )
-from PySide6.QtCore import QTimer, Qt
-from PySide6.QtGui import QAction, QFontMetrics, QResizeEvent, QWheelEvent
-from script_manager import ScriptManager
+
 import utils
-from utils import run_script_in_gitbash, kill_script_process, get_process_tree_after_spawn
 from config import (
-    load_project_path,
-    save_project_path,
-    load_terminal_path,
-    save_terminal_path,
-    load_venv_activate_path,
-    save_venv_activate_path,
-    load_script_categories,
-    save_script_category,
     load_favorites,
+    load_project_path,
+    load_script_categories,
+    load_terminal_path,
+    load_theme,
+    load_venv_activate_path,
+    save_project_path,
+    save_script_category,
+    save_terminal_path,
+    save_theme,
+    save_venv_activate_path,
     toggle_favorite,
 )
-from metrics import collect_metrics, format_elapsed, format_cpu_time, PLACEHOLDER
-from theme import PALETTE
+from metrics import PLACEHOLDER, collect_metrics, format_cpu_time, format_elapsed
+from script_manager import ScriptManager
+from theme import DARK_PALETTE, LIGHT_PALETTE, get_stylesheet
+from utils import get_process_tree_after_spawn, kill_script_process, run_script_in_gitbash
 
-CELL_PAD = 12
 CATEGORY_OPTIONS = ("None", "backend", "frontend")
-CARD_MIN_WIDTH = 320
+CATEGORY_FILTER_OPTIONS = ("All", "Backend", "Frontend", "Running")
+SIDEBAR_WIDTH = 220
 
 
 class NoWheelComboBox(QComboBox):
@@ -54,75 +58,45 @@ class NoWheelComboBox(QComboBox):
 class ShScriptHubApp(QMainWindow):
     def __init__(self):
         super().__init__()
+
         self.script_manager = None
         self.scripts = []
+        self.script_rows = []
+        self.script_categories = {}
         self.terminal_path = load_terminal_path()
         self.venv_activate_path = load_venv_activate_path()
         self.project_path = None
-        self.script_rows = []
-        self._grid_columns = 2
+        self._theme: str = load_theme()
+        self._selected_script_path: Optional[str] = None
+        self._folder_expanded: dict[str, bool] = {}
+        # Permanent tree widget references — built once, filtered via setVisible
+        self._tree_script_rows: dict[str, QWidget] = {}   # path -> row widget
+        self._tree_script_dots: dict[str, QLabel] = {}    # path -> dot label
+        self._tree_folder_headers: dict[str, QWidget] = {}
+        self._tree_children_widgets: dict[str, QWidget] = {}
 
         self._update_title()
-        self._build_menubar()
         central = QWidget()
         self.setCentralWidget(central)
         layout = QVBoxLayout(central)
-        layout.setContentsMargins(16, 16, 16, 16)
+        layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(0)
 
-        top_frame = QWidget()
-        top_layout = QVBoxLayout(top_frame)
-        top_layout.setContentsMargins(0, 0, 0, 0)
-        top_layout.setSpacing(4)
-        self.terminal_label = QLabel("Terminal path: —")
-        self.venv_label = QLabel("Venv activate: Auto")
-        self.project_label = QLabel("Project path: —")
-        top_layout.addWidget(self.terminal_label)
-        top_layout.addWidget(self.venv_label)
-        top_layout.addWidget(self.project_label)
-        layout.addWidget(top_frame)
-        layout.addSpacing(16)
+        self.top_bar = self._build_top_bar()
+        layout.addWidget(self.top_bar)
 
-        sep = QFrame()
-        sep.setObjectName("separator")
-        sep.setFrameShape(QFrame.HLine)
-        layout.addWidget(sep)
-        layout.addSpacing(12)
+        self.paths_row = self._build_paths_row()
+        layout.addWidget(self.paths_row)
 
-        self.scroll_area = QScrollArea()
-        self.scroll_area.setWidgetResizable(True)
-        self.scroll_area.setHorizontalScrollBarPolicy(Qt.ScrollBarAsNeeded)
-        self.scroll_area.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
-        self.scroll_area.setFrameShape(QFrame.NoFrame)
-        vp = self.scroll_area.viewport()
-        vp.setObjectName("scrollViewport")
-        vp.setAutoFillBackground(True)
-        self.scripts_container = QWidget()
-        self.scripts_container.setObjectName("scriptsContainer")
-        self.scripts_layout = QVBoxLayout(self.scripts_container)
-        self.scripts_layout.setContentsMargins(0, 0, 0, 0)
-        self.scripts_layout.setAlignment(Qt.AlignTop)
-        self.scroll_area.setWidget(self.scripts_container)
-
-        self.search_edit = QLineEdit()
-        self.search_edit.setObjectName("searchEdit")
-        self.search_edit.setPlaceholderText("Search by folder or file name...")
-        self.search_edit.setClearButtonEnabled(True)
-        self.folder_combo = NoWheelComboBox()
-        self.folder_combo.setObjectName("folderCombo")
-        self.folder_combo.setMinimumWidth(140)
-        self.folder_combo.addItem("All")
-        search_row = QHBoxLayout()
-        search_row.setSpacing(10)
-        search_row.addWidget(self.search_edit, 1)
-        search_row.addWidget(QLabel("Folder:"))
-        search_row.addWidget(self.folder_combo, 0)
-        layout.addLayout(search_row)
-        layout.addSpacing(8)
-        layout.addWidget(self.scroll_area, 1)
-
-        self.search_edit.textChanged.connect(self._on_search_changed)
-        self.folder_combo.currentTextChanged.connect(self._on_folder_changed)
+        self.body_splitter = QSplitter(Qt.Horizontal)
+        self.sidebar_panel = self._build_sidebar()
+        self.detail_panel = self._build_detail_panel()
+        self.body_splitter.addWidget(self.sidebar_panel)
+        self.body_splitter.addWidget(self.detail_panel)
+        self.body_splitter.setStretchFactor(0, 0)
+        self.body_splitter.setStretchFactor(1, 1)
+        self.body_splitter.setSizes([SIDEBAR_WIDTH, 900])
+        layout.addWidget(self.body_splitter, 1)
 
         self._update_path_labels()
         saved = load_project_path()
@@ -130,67 +104,294 @@ class ShScriptHubApp(QMainWindow):
             self.project_path = saved
             self._update_title()
             self.load_scripts()
-        else:
-            self.project_path = None
         self._update_path_labels()
+        self._render_detail_panel()
 
         self._tick_timer = QTimer(self)
         self._tick_timer.timeout.connect(self._tick_process_check)
         self._tick_timer.start(1000)
         QTimer.singleShot(100, self._ensure_terminal_path)
 
-    def _menu_width_from_actions(self, menu: QMenu) -> None:
-        fm = QFontMetrics(menu.font())
-        w = max(fm.horizontalAdvance(act.text()) for act in menu.actions()) if menu.actions() else 0
-        menu.setMinimumWidth(w + 28)
+    @property
+    def _palette(self) -> dict:
+        return DARK_PALETTE if self._theme == "dark" else LIGHT_PALETTE
 
-    def _build_menubar(self):
-        menubar = self.menuBar()
-        project_menu = menubar.addMenu("Project")
-        act = QAction("Set project path", self)
-        act.triggered.connect(self.select_project)
-        project_menu.addAction(act)
-        act = QAction("Refresh", self)
-        act.triggered.connect(self._refresh_scripts)
-        project_menu.addAction(act)
-        self._menu_width_from_actions(project_menu)
+    def _build_top_bar(self) -> QWidget:
+        bar = QWidget()
+        bar.setObjectName("topBar")
+        bar.setFixedHeight(32)
 
-        terminal_menu = menubar.addMenu("Terminal")
-        act = QAction("Set terminal path", self)
-        act.triggered.connect(self._choose_terminal_path)
-        terminal_menu.addAction(act)
-        self._menu_width_from_actions(terminal_menu)
+        row = QHBoxLayout(bar)
+        row.setContentsMargins(12, 0, 12, 0)
+        row.setSpacing(4)
 
-        venv_menu = menubar.addMenu("Venv")
-        act = QAction("Set venv activate path", self)
-        act.triggered.connect(self._choose_venv_activate_path)
-        venv_menu.addAction(act)
-        act = QAction("Clear venv path", self)
-        act.triggered.connect(self._clear_venv_activate_path)
-        venv_menu.addAction(act)
-        self._menu_width_from_actions(venv_menu)
+        project_btn = QPushButton("Project")
+        project_btn.setObjectName("topBarBtn")
+        project_btn.clicked.connect(
+            lambda: self._show_button_menu(
+                project_btn,
+                [
+                    ("Set project path", self.select_project),
+                    ("Refresh", self._refresh_scripts),
+                ],
+            )
+        )
+        row.addWidget(project_btn)
 
-    def _update_path_labels(self):
+        terminal_btn = QPushButton("Terminal")
+        terminal_btn.setObjectName("topBarBtn")
+        terminal_btn.clicked.connect(
+            lambda: self._show_button_menu(
+                terminal_btn,
+                [("Set terminal path", self._choose_terminal_path)],
+            )
+        )
+        row.addWidget(terminal_btn)
+
+        venv_btn = QPushButton("Venv")
+        venv_btn.setObjectName("topBarBtn")
+        venv_btn.clicked.connect(
+            lambda: self._show_button_menu(
+                venv_btn,
+                [
+                    ("Set venv activate path", self._choose_venv_activate_path),
+                    ("Clear venv path", self._clear_venv_activate_path),
+                ],
+            )
+        )
+        row.addWidget(venv_btn)
+
+        row.addStretch()
+
+        theme_label = "☀ Light" if self._theme == "dark" else "🌙 Dark"
+        self._theme_btn = QPushButton(theme_label)
+        self._theme_btn.setObjectName("topBarBtn")
+        self._theme_btn.clicked.connect(self._toggle_theme)
+        row.addWidget(self._theme_btn)
+
+        return bar
+
+    def _toggle_theme(self) -> None:
+        self._theme = "light" if self._theme == "dark" else "dark"
+        save_theme(self._theme)
+        QApplication.instance().setStyleSheet(get_stylesheet(self._theme))
+        self._theme_btn.setText("☀ Light" if self._theme == "dark" else "🌙 Dark")
+
+    def _build_paths_row(self) -> QWidget:
+        row_widget = QWidget()
+        row_widget.setObjectName("pathsRow")
+        row_widget.setFixedHeight(32)
+        row = QHBoxLayout(row_widget)
+        row.setContentsMargins(12, 0, 12, 0)
+        row.setSpacing(8)
+
+        self.terminal_label = QLabel("Terminal path: —")
+        self.project_label = QLabel("Project path: —")
+        self.venv_label = QLabel("Venv activate: Auto")
+
+        sep1 = QLabel("|")
+        sep2 = QLabel("|")
+        sep1.setStyleSheet(f"color: {self._palette['text_muted']};")
+        sep2.setStyleSheet(f"color: {self._palette['text_muted']};")
+
+        row.addWidget(self.terminal_label)
+        row.addWidget(sep1)
+        row.addWidget(self.project_label)
+        row.addWidget(sep2)
+        row.addWidget(self.venv_label)
+        row.addStretch()
+
+        return row_widget
+
+    def _build_sidebar(self) -> QFrame:
+        panel = QFrame()
+        panel.setObjectName("sidebarPanel")
+        panel.setMinimumWidth(SIDEBAR_WIDTH)
+
+        layout = QVBoxLayout(panel)
+        layout.setContentsMargins(12, 8, 12, 8)
+        layout.setSpacing(8)
+
+        favorites_header = QLabel("FAVORITES")
+        favorites_header.setObjectName("sectionHeader")
+        layout.addWidget(favorites_header)
+
+        favorites_section = QWidget()
+        favorites_section.setObjectName("favoritesSection")
+        self.favorites_layout = QVBoxLayout(favorites_section)
+        self.favorites_layout.setContentsMargins(0, 0, 0, 0)
+        self.favorites_layout.setSpacing(2)
+        layout.addWidget(favorites_section)
+
+        layout.addWidget(self._build_divider())
+
+        filter_row = QHBoxLayout()
+        filter_row.setContentsMargins(0, 0, 0, 0)
+        filter_row.setSpacing(6)
+        filter_row.addWidget(QLabel("Filter"))
+        self.category_combo = NoWheelComboBox()
+        self.category_combo.setObjectName("categoryCombo")
+        self.category_combo.addItems(CATEGORY_FILTER_OPTIONS)
+        filter_row.addWidget(self.category_combo, 1)
+        layout.addLayout(filter_row)
+
+        self.search_edit = QLineEdit()
+        self.search_edit.setObjectName("searchEdit")
+        self.search_edit.setPlaceholderText("Search...")
+        self.search_edit.setClearButtonEnabled(True)
+        layout.addWidget(self.search_edit)
+
+        layout.addWidget(self._build_divider())
+
+        project_header = QLabel("PROJECT")
+        project_header.setObjectName("sectionHeader")
+        layout.addWidget(project_header)
+
+        self.tree_scroll = QScrollArea()
+        self.tree_scroll.setFrameShape(QFrame.NoFrame)
+        self.tree_scroll.setWidgetResizable(True)
+        self.tree_container = QWidget()
+        self.tree_container.setObjectName("treeSection")
+        self.tree_layout = QVBoxLayout(self.tree_container)
+        self.tree_layout.setContentsMargins(0, 0, 0, 0)
+        self.tree_layout.setSpacing(2)
+        self.tree_scroll.setWidget(self.tree_container)
+        layout.addWidget(self.tree_scroll, 1)
+
+        self._search_debounce_timer = QTimer(self)
+        self._search_debounce_timer.setSingleShot(True)
+        self._search_debounce_timer.setInterval(180)
+        self._search_debounce_timer.timeout.connect(self._on_filter_changed)
+
+        self.category_combo.currentTextChanged.connect(self._on_filter_changed)
+        self.search_edit.textChanged.connect(self._search_debounce_timer.start)
+
+        return panel
+
+    def _build_detail_panel(self) -> QWidget:
+        panel = QWidget()
+        panel.setObjectName("detailPanel")
+        root = QVBoxLayout(panel)
+        root.setContentsMargins(24, 16, 24, 16)
+        root.setSpacing(12)
+
+        self._detail_placeholder = QWidget()
+        placeholder_layout = QVBoxLayout(self._detail_placeholder)
+        placeholder_layout.setContentsMargins(0, 0, 0, 0)
+        placeholder_layout.addStretch()
+        placeholder_lbl = QLabel("Select a script")
+        placeholder_lbl.setAlignment(Qt.AlignCenter)
+        placeholder_layout.addWidget(placeholder_lbl)
+        placeholder_layout.addStretch()
+        root.addWidget(self._detail_placeholder, 1)
+
+        self._detail_content = QWidget()
+        content = QVBoxLayout(self._detail_content)
+        content.setContentsMargins(0, 0, 0, 0)
+        content.setSpacing(12)
+        root.addWidget(self._detail_content, 1)
+
+        self.detail_title = QLabel("")
+        self.detail_title.setObjectName("detailTitle")
+        content.addWidget(self.detail_title)
+
+        detail_row = QHBoxLayout()
+        detail_row.setSpacing(8)
+        detail_row.addWidget(QLabel("Category:"))
+        self.detail_category_combo = NoWheelComboBox()
+        self.detail_category_combo.setObjectName("detailCategoryCombo")
+        self.detail_category_combo.addItems(CATEGORY_OPTIONS)
+        detail_row.addWidget(self.detail_category_combo)
+        detail_row.addSpacing(8)
+        detail_row.addWidget(QLabel("Env:"))
+        self.detail_env_label = QLabel(PLACEHOLDER)
+        detail_row.addWidget(self.detail_env_label)
+        detail_row.addSpacing(8)
+        detail_row.addWidget(QLabel("Status:"))
+        self.detail_status_label = QLabel(PLACEHOLDER)
+        detail_row.addWidget(self.detail_status_label)
+        detail_row.addSpacing(8)
+        detail_row.addWidget(QLabel("PID:"))
+        self.detail_pid_label = QLabel(PLACEHOLDER)
+        detail_row.addWidget(self.detail_pid_label)
+        detail_row.addStretch()
+        self.detail_fav_btn = QPushButton("☆")
+        self.detail_fav_btn.setObjectName("favBtn")
+        detail_row.addWidget(self.detail_fav_btn)
+        content.addLayout(detail_row)
+
+        action_row = QHBoxLayout()
+        action_row.setSpacing(8)
+        self.detail_run_btn = QPushButton("Run")
+        self.detail_run_btn.setObjectName("runBtn")
+        self.detail_kill_btn = QPushButton("Kill")
+        self.detail_kill_btn.setObjectName("killBtn")
+        self.detail_kill_btn.setVisible(False)
+        action_row.addWidget(self.detail_run_btn)
+        action_row.addWidget(self.detail_kill_btn)
+        action_row.addStretch()
+        content.addLayout(action_row)
+
+        metrics_header = QLabel("Metrics (selected script)")
+        metrics_header.setStyleSheet(f"color: {self._palette['text_title']}; font-weight: 700;")
+        content.addWidget(metrics_header)
+
+        metrics_grid = QGridLayout()
+        metric_specs = [
+            ("CPU %", "detail_cpu_pct_label"),
+            ("RAM (RSS)", "detail_ram_rss_label"),
+            ("RAM %", "detail_ram_pct_label"),
+            ("Elapsed", "detail_elapsed_label"),
+            ("Peak memory", "detail_peak_mem_label"),
+            ("CPU time", "detail_cpu_time_label"),
+            ("Threads", "detail_threads_label"),
+        ]
+        for idx, (title, attr_name) in enumerate(metric_specs):
+            r, c = idx // 2, (idx % 2) * 2
+            metrics_grid.addWidget(QLabel(f"{title}:"), r, c)
+            value = QLabel(PLACEHOLDER)
+            setattr(self, attr_name, value)
+            metrics_grid.addWidget(value, r, c + 1)
+        content.addLayout(metrics_grid)
+
+        self.graphs_box = QFrame()
+        self.graphs_box.setObjectName("graphsBox")
+        graphs_layout = QVBoxLayout(self.graphs_box)
+        graphs_layout.setContentsMargins(12, 12, 12, 12)
+        graphs_placeholder = QLabel("graphs and other metrics will be here in the future")
+        graphs_placeholder.setAlignment(Qt.AlignCenter)
+        graphs_layout.addWidget(graphs_placeholder)
+        content.addWidget(self.graphs_box, 1)
+
+        self.detail_run_btn.clicked.connect(self._run_selected_script)
+        self.detail_kill_btn.clicked.connect(self._kill_selected_script)
+        self.detail_fav_btn.clicked.connect(self._toggle_selected_favorite)
+        self.detail_category_combo.currentTextChanged.connect(self._on_detail_category_changed)
+
+        self._detail_content.setVisible(False)
+        self._detail_placeholder.setVisible(True)
+        return panel
+
+    def _build_divider(self) -> QFrame:
+        divider = QFrame()
+        divider.setObjectName("divider")
+        divider.setFrameShape(QFrame.HLine)
+        return divider
+
+    def _show_button_menu(self, button: QPushButton, action_specs: list[tuple[str, Callable]]) -> None:
+        menu = QMenu(self)
+        for text, callback in action_specs:
+            action = QAction(text, self)
+            action.triggered.connect(callback)
+            menu.addAction(action)
+        menu.exec(button.mapToGlobal(button.rect().bottomLeft()))
+
+    def _update_path_labels(self) -> None:
         self.terminal_label.setText(f"Terminal path: {self.terminal_path or '—'}")
         self.venv_label.setText(f"Venv activate: {self.venv_activate_path or 'Auto'}")
         self.project_label.setText(f"Project path: {self.project_path or '—'}")
 
-    def _get_grid_columns(self) -> int:
-        width = self.scroll_area.viewport().width() if self.scroll_area else 0
-        if width <= 0:
-            return 2
-        return max(1, min(3, width // CARD_MIN_WIDTH))
-
-    def resizeEvent(self, event: QResizeEvent) -> None:
-        super().resizeEvent(event)
-        if not self.script_rows:
-            return
-        new_cols = self._get_grid_columns()
-        if new_cols != self._grid_columns:
-            self._grid_columns = new_cols
-            self._rebuild_cards_layout()
-
-    def _choose_terminal_path(self):
+    def _choose_terminal_path(self) -> None:
         QMessageBox.information(
             self,
             "ShScriptHub",
@@ -212,7 +413,7 @@ class ShScriptHubApp(QMainWindow):
             self._update_path_labels()
             QMessageBox.information(self, "ShScriptHub", "Terminal path saved.")
 
-    def _choose_venv_activate_path(self):
+    def _choose_venv_activate_path(self) -> None:
         QMessageBox.information(
             self,
             "ShScriptHub",
@@ -230,13 +431,13 @@ class ShScriptHubApp(QMainWindow):
             self._update_path_labels()
             QMessageBox.information(self, "ShScriptHub", "Venv activate path saved.")
 
-    def _refresh_scripts(self):
+    def _refresh_scripts(self) -> None:
         if not self.project_path:
             QMessageBox.information(self, "ShScriptHub", "Select project path first.")
             return
         self.load_scripts()
 
-    def _clear_venv_activate_path(self):
+    def _clear_venv_activate_path(self) -> None:
         save_venv_activate_path("")
         self.venv_activate_path = None
         self._update_path_labels()
@@ -246,24 +447,22 @@ class ShScriptHubApp(QMainWindow):
             self, "ShScriptHub", "Venv path cleared. Backend scripts will use auto-detect."
         )
 
-    def _ensure_terminal_path(self):
+    def _ensure_terminal_path(self) -> None:
         if self.terminal_path and os.path.isfile(self.terminal_path):
             return
-        QMessageBox.information(
-            self,
-            "ShScriptHub",
-            "Select your terminal executable (e.g. Git Bash).",
-        )
         self._choose_terminal_path()
 
     def _get_default_category(self, script_path: str) -> str:
         rel = os.path.relpath(script_path, self.project_path)
         parts = os.path.normpath(rel).split(os.sep)
-        if parts and parts[0] == "backend":
+        if parts and parts[0].lower() == "backend":
             return "backend"
-        if parts and parts[0] == "frontend":
+        if parts and parts[0].lower() == "frontend":
             return "frontend"
         return "none"
+
+    def _get_category_for_script(self, script_path: str) -> str:
+        return self.script_categories.get(script_path) or self._get_default_category(script_path)
 
     def _get_env_display(self, script: dict, category: str) -> str:
         cwd = os.path.dirname(script["path"])
@@ -289,13 +488,13 @@ class ShScriptHubApp(QMainWindow):
             return "node_modules"
         return "—"
 
-    def _update_title(self):
+    def _update_title(self) -> None:
         if getattr(self, "project_path", None):
             self.setWindowTitle(f"ShScriptHub - {os.path.basename(self.project_path)}")
         else:
             self.setWindowTitle("ShScriptHub")
 
-    def select_project(self):
+    def select_project(self) -> None:
         folder = QFileDialog.getExistingDirectory(self, "Select the root of the project")
         if not folder:
             return
@@ -314,270 +513,385 @@ class ShScriptHubApp(QMainWindow):
         folder = os.path.basename(os.path.dirname(script["path"])).lower()
         return q in rel or q in name or q in folder
 
-    def _on_search_changed(self, text: str) -> None:
-        self._rebuild_cards_layout()
-
-    def _on_folder_changed(self, text: str) -> None:
-        self._rebuild_cards_layout()
-
     def _script_folder(self, script: dict) -> str:
-        """Return 'root' if script is at project root, else the first folder name."""
         rel = os.path.relpath(script["path"], self.project_path)
         parts = os.path.normpath(rel).split(os.sep)
         if len(parts) <= 1:
             return "root"
         return parts[0]
 
-    def _get_folders_with_scripts(self) -> list[str]:
-        """Folders that have at least one script: 'root' plus first path folders."""
-        folders = set()
-        for s in self.scripts:
-            folders.add(self._script_folder(s))
-        return ["root"] + sorted(f for f in folders if f != "root")
+    def _get_row(self, path: Optional[str]) -> Optional[dict]:
+        if not path:
+            return None
+        for row in self.script_rows:
+            if row["script"]["path"] == path:
+                return row
+        return None
 
-    def _refresh_folder_filter(self) -> None:
-        """Populate the folder dropdown with only folders that have scripts."""
-        self.folder_combo.blockSignals(True)
-        self.folder_combo.clear()
-        self.folder_combo.addItem("All")
-        for folder in self._get_folders_with_scripts():
-            self.folder_combo.addItem(folder)
-        self.folder_combo.setCurrentIndex(0)
-        self.folder_combo.blockSignals(False)
+    def _is_row_running(self, row: Optional[dict]) -> bool:
+        if row is None:
+            return False
+        proc = row.get("process")
+        return proc is not None and proc.poll() is None
 
-    def _on_favorite_clicked(self, row: dict) -> None:
-        path = row["script"]["path"]
-        now_fav = toggle_favorite(path)
-        row["fav_btn"].setText("★" if now_fav else "☆")
-        row["fav_btn"].setToolTip("Unfavorite" if now_fav else "Favorite")
-        self._rebuild_cards_layout()
+    def _set_detail_status(self, text: str) -> None:
+        self.detail_status_label.setText(text)
+        color = {
+            "—": self._palette["status_placeholder"],
+            "Running": self._palette["status_running"],
+            "Stopped": self._palette["status_stopped"],
+        }.get(text, self._palette["status_placeholder"])
+        self.detail_status_label.setStyleSheet(f"color: {color};")
 
-    def _rebuild_cards_layout(self) -> None:
-        """Build rows of cards: each row is full-width; cards in a row share width equally. No empty columns."""
-        if not self.script_rows:
+    def _run_selected_script(self) -> None:
+        row = self._get_row(self._selected_script_path)
+        if row:
+            self._run_script_row(row)
+
+    def _kill_selected_script(self) -> None:
+        row = self._get_row(self._selected_script_path)
+        if row:
+            self._kill_script_row(row)
+
+    def _toggle_selected_favorite(self) -> None:
+        path = self._selected_script_path
+        if not path:
             return
-        search_text = self.search_edit.text() if getattr(self, "search_edit", None) else ""
-        folder_filter = self.folder_combo.currentText() if getattr(self, "folder_combo", None) else "All"
-        favorites = load_favorites()
-        matching = [
-            r for r in self.script_rows
-            if self._matches_search(r["script"], search_text)
-            and (folder_filter == "All" or self._script_folder(r["script"]) == folder_filter)
-        ]
-        matching.sort(key=lambda r: (r["script"]["path"] not in favorites, r["script"]["path"].lower()))
+        now_fav = toggle_favorite(path)
+        self.detail_fav_btn.setText("★" if now_fav else "☆")
+        self._rebuild_favorites()
+        self._refresh_sidebar_selection()
 
-        while self.scripts_layout.count():
-            item = self.scripts_layout.takeAt(0)
+    def _on_detail_category_changed(self, text: str) -> None:
+        path = self._selected_script_path
+        if not path:
+            return
+        stored = "none" if text == "None" else text
+        save_script_category(path, stored)
+        self.script_categories[path] = stored
+        row = self._get_row(path)
+        if row:
+            self.detail_env_label.setText(self._get_env_display(row["script"], stored))
+        self._apply_tree_filter()
+
+    def _select_script(self, path: str) -> None:
+        self._selected_script_path = path
+        self._render_detail_panel()
+        self._refresh_sidebar_selection()
+
+    def _render_detail_panel(self) -> None:
+        row = self._get_row(self._selected_script_path)
+        if row is None:
+            self._detail_placeholder.setVisible(True)
+            self._detail_content.setVisible(False)
+            return
+
+        self._detail_placeholder.setVisible(False)
+        self._detail_content.setVisible(True)
+
+        path = row["script"]["path"]
+        rel = os.path.relpath(path, self.project_path).replace("\\", "/")
+        category = self._get_category_for_script(path)
+        running = self._is_row_running(row)
+
+        self.detail_title.setText(rel)
+        self.detail_category_combo.blockSignals(True)
+        self.detail_category_combo.setCurrentText("None" if category == "none" else category)
+        self.detail_category_combo.blockSignals(False)
+        self.detail_env_label.setText(self._get_env_display(row["script"], category))
+
+        self._set_detail_status("Running" if running else "Stopped")
+        proc = row.get("process")
+        self.detail_pid_label.setText(str(proc.pid) if running and proc is not None else PLACEHOLDER)
+        self.detail_fav_btn.setText("★" if path in load_favorites() else "☆")
+        self.detail_kill_btn.setVisible(running)
+
+        if running:
+            self._update_row_metrics(row)
+        else:
+            for lbl in (
+                self.detail_cpu_pct_label,
+                self.detail_ram_rss_label,
+                self.detail_ram_pct_label,
+                self.detail_elapsed_label,
+                self.detail_peak_mem_label,
+                self.detail_cpu_time_label,
+                self.detail_threads_label,
+            ):
+                lbl.setText(PLACEHOLDER)
+
+    # ------------------------------------------------------------------
+    # Sidebar – favorites (rebuilt on load/favorite-toggle only)
+    # ------------------------------------------------------------------
+
+    def _rebuild_favorites(self) -> None:
+        """Tear down and recreate only the favorites section. Called on load and favorite toggle."""
+        while self.favorites_layout.count():
+            item = self.favorites_layout.takeAt(0)
             w = item.widget()
             if w:
-                w.deleteLater()
+                w.hide()
+                w.setParent(None)
 
-        cols = self._grid_columns
-        for i in range(0, len(matching), cols):
-            row_cards = [matching[j]["card"] for j in range(i, min(i + cols, len(matching)))]
-            row_widget = QWidget()
-            row_widget.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
-            row_layout = QHBoxLayout(row_widget)
-            row_layout.setContentsMargins(0, 0, 0, 0)
-            row_layout.setSpacing(16)
-            for card in row_cards:
-                row_layout.addWidget(card, 1)
-            self.scripts_layout.addWidget(row_widget)
-        self.scripts_layout.addStretch()
+        # Favorites sidebar refs are separate from tree refs
+        self._fav_row_refs: list[tuple[str, QWidget, QLabel]] = []
 
-    def _clear_scripts_ui(self):
-        while self.scripts_layout.count():
-            item = self.scripts_layout.takeAt(0)
-            if item.widget():
-                item.widget().deleteLater()
+        favorites = sorted(load_favorites())
+        favorites = [p for p in favorites if self._get_row(p) is not None]
+        if not favorites:
+            empty = QLabel("No favorites")
+            empty.setStyleSheet(f"color: {self._palette['text_muted']};")
+            self.favorites_layout.addWidget(empty)
+            return
+        for script_path in favorites:
+            row_w, dot = self._make_sidebar_row_widget(script_path, show_star=True)
+            self.favorites_layout.addWidget(row_w)
+            self._fav_row_refs.append((script_path, row_w, dot))
 
-    def load_scripts(self):
+    # ------------------------------------------------------------------
+    # Sidebar – tree (built ONCE on load_scripts, filtered via setVisible)
+    # ------------------------------------------------------------------
+
+    def _build_tree(self) -> None:
+        """Build the full tree from scratch. Called only from load_scripts."""
+        # Clear any previous tree widgets
+        while self.tree_layout.count():
+            item = self.tree_layout.takeAt(0)
+            w = item.widget()
+            if w:
+                w.hide()
+                w.setParent(None)
+
+        self._tree_script_rows.clear()
+        self._tree_script_dots.clear()
+        self._tree_folder_headers.clear()
+        self._tree_children_widgets.clear()
+
+        # Group ALL scripts by folder (no filtering here)
+        grouped: dict[str, list[dict]] = {}
+        for row in self.script_rows:
+            folder = self._script_folder(row["script"])
+            grouped.setdefault(folder, []).append(row)
+
+        folders = sorted(f for f in grouped if f != "root")
+        if "root" in grouped:
+            folders.append("root")
+
+        for folder in folders:
+            expanded = self._folder_expanded.get(folder, True)
+
+            folder_header = QWidget()
+            header_layout = QHBoxLayout(folder_header)
+            header_layout.setContentsMargins(6, 4, 6, 2)
+            header_layout.setSpacing(6)
+            toggle_btn = QPushButton("▼" if expanded else "►")
+            toggle_btn.setObjectName("folderToggleBtn")
+            toggle_btn.setFixedSize(22, 22)
+            folder_lbl = QLabel(folder)
+            folder_lbl.setStyleSheet(f"font-weight: 600; color: {self._palette['text_secondary']};")
+            header_layout.addWidget(toggle_btn, 0)
+            header_layout.addWidget(folder_lbl, 1)
+            self.tree_layout.addWidget(folder_header)
+            self._tree_folder_headers[folder] = folder_header
+
+            children_widget = QWidget()
+            children_layout = QVBoxLayout(children_widget)
+            children_layout.setContentsMargins(18, 0, 0, 4)
+            children_layout.setSpacing(2)
+
+            for row in sorted(grouped[folder], key=lambda r: r["script"]["path"].lower()):
+                script = row["script"]
+                row_w, dot = self._make_sidebar_row_widget(script["path"], display_text=script["name"])
+                children_layout.addWidget(row_w)
+                self._tree_script_rows[script["path"]] = row_w
+                self._tree_script_dots[script["path"]] = dot
+
+            children_widget.setVisible(expanded)
+            self.tree_layout.addWidget(children_widget)
+            self._tree_children_widgets[folder] = children_widget
+
+            toggle_btn.clicked.connect(
+                lambda checked=False, f=folder, w=children_widget, b=toggle_btn: self._toggle_folder(f, w, b)
+            )
+
+        self.tree_layout.addStretch()
+
+    def _apply_tree_filter(self) -> None:
+        """Show/hide existing tree widgets based on current filter and search. No widget creation."""
+        filter_text = self.category_combo.currentText()
+        query = self.search_edit.text().strip().lower()
+
+        for row in self.script_rows:
+            script = row["script"]
+            path = script["path"]
+            row_w = self._tree_script_rows.get(path)
+            if row_w is None:
+                continue
+
+            visible = True
+            if query and not self._matches_search(script, query):
+                visible = False
+            if visible and filter_text == "Backend":
+                visible = self._get_category_for_script(path) == "backend"
+            if visible and filter_text == "Frontend":
+                visible = self._get_category_for_script(path) == "frontend"
+            if visible and filter_text == "Running":
+                visible = self._is_row_running(row)
+
+            row_w.setVisible(visible)
+
+        # Show/hide folder headers: visible if at least one child is not explicitly hidden.
+        # isVisible() must NOT be used here — when children_widget is hidden (from a prior
+        # filter pass) all children also return isVisible()==False, breaking subsequent passes.
+        # isHidden() checks only the widget's own flag, independent of ancestor visibility.
+        for folder, children_widget in self._tree_children_widgets.items():
+            expanded = self._folder_expanded.get(folder, True)
+            children_layout = children_widget.layout()
+            folder_has_visible = any(
+                children_layout.itemAt(i).widget() is not None
+                and not children_layout.itemAt(i).widget().isHidden()
+                for i in range(children_layout.count())
+            )
+            header = self._tree_folder_headers.get(folder)
+            if header:
+                header.setVisible(folder_has_visible)
+            children_widget.setVisible(folder_has_visible and expanded)
+
+    def _toggle_folder(self, folder: str, widget: QWidget, toggle_btn: QPushButton) -> None:
+        current = self._folder_expanded.get(folder, True)
+        new_state = not current
+        self._folder_expanded[folder] = new_state
+        widget.setVisible(new_state)
+        toggle_btn.setText("▼" if new_state else "►")
+
+    def _make_sidebar_row_widget(
+        self, script_path: str, show_star: bool = False, display_text: Optional[str] = None
+    ) -> tuple[QWidget, QLabel]:
+        """Create a sidebar row widget. Returns (row_widget, dot_label)."""
+        row = QWidget()
+        row.setObjectName("sidebarRow")
+        row.setProperty("selected", script_path == self._selected_script_path)
+        row.setCursor(Qt.PointingHandCursor)
+        row_layout = QHBoxLayout(row)
+        row_layout.setContentsMargins(8, 3, 8, 3)
+        row_layout.setSpacing(6)
+
+        running = self._is_row_running(self._get_row(script_path))
+        dot = QLabel("•" if running else "o")
+        dot.setObjectName("dotLabel")
+        dot.setProperty("running", "true" if running else "false")
+        row_layout.addWidget(dot)
+
+        if display_text is None:
+            display_text = os.path.relpath(script_path, self.project_path).replace("\\", "/")
+        name_lbl = QLabel(display_text)
+        name_lbl.setToolTip(os.path.relpath(script_path, self.project_path).replace("\\", "/"))
+        row_layout.addWidget(name_lbl, 1)
+
+        if show_star or script_path in load_favorites():
+            star = QLabel("★")
+            star.setStyleSheet(f"color: {self._palette['fav_btn']};")
+            row_layout.addWidget(star)
+
+        row.mousePressEvent = lambda event, p=script_path: self._select_script(p)
+        return row, dot
+
+    def _refresh_sidebar(self) -> None:
+        """Full sidebar refresh — called on load and favorite toggle."""
+        self._rebuild_favorites()
+        self._build_tree()
+        self._refresh_sidebar_selection()
+
+    def _refresh_sidebar_dots(self) -> None:
+        """Update dot state on all visible sidebar rows without any widget creation."""
+        all_refs = list(self._tree_script_dots.items())
+        fav_refs = getattr(self, "_fav_row_refs", [])
+
+        for path, dot in all_refs:
+            running = self._is_row_running(self._get_row(path))
+            dot.setText("•" if running else "o")
+            dot.setProperty("running", "true" if running else "false")
+            dot.style().unpolish(dot)
+            dot.style().polish(dot)
+
+        for path, _row_w, dot in fav_refs:
+            running = self._is_row_running(self._get_row(path))
+            dot.setText("•" if running else "o")
+            dot.setProperty("running", "true" if running else "false")
+            dot.style().unpolish(dot)
+            dot.style().polish(dot)
+
+        self._refresh_sidebar_selection()
+
+    def _refresh_sidebar_selection(self) -> None:
+        """Update selected highlight on all sidebar rows."""
+        all_rows: list[tuple[str, QWidget]] = list(self._tree_script_rows.items())
+        all_rows += [(p, w) for p, w, _d in getattr(self, "_fav_row_refs", [])]
+        for path, widget in all_rows:
+            widget.setProperty("selected", path == self._selected_script_path)
+            widget.style().unpolish(widget)
+            widget.style().polish(widget)
+
+    def _on_filter_changed(self, _value=None) -> None:
+        self._apply_tree_filter()
+        self._refresh_sidebar_selection()
+
+    def load_scripts(self) -> None:
         try:
-            self._clear_scripts_ui()
             self.script_rows = []
             self.script_manager = ScriptManager(self.project_path)
             self.scripts = self.script_manager.get_scripts()
-        except Exception as e:
-            QMessageBox.critical(self, "ShScriptHub - Error", f"Failed to load scripts: {str(e)}")
+        except Exception as exc:
+            QMessageBox.critical(self, "ShScriptHub - Error", f"Failed to load scripts: {str(exc)}")
             return
 
-        if not self.scripts:
-            no_scripts = QLabel("No .sh scripts found")
-            self.scripts_layout.addWidget(no_scripts)
-            return
-
-        favorites = load_favorites()
-        self.scripts.sort(key=lambda s: (s["path"] not in favorites, s["path"].lower()))
-
-        script_categories = load_script_categories()
-        self._grid_columns = self._get_grid_columns()
-
-        for row_idx, s in enumerate(self.scripts):
-            rel_path = os.path.relpath(s["path"], self.project_path).replace("\\", "/")
-            display_name = rel_path
-            if s["path"] in script_categories:
-                category_to_show = script_categories[s["path"]]
-            else:
-                category_to_show = self._get_default_category(s["path"])
-            category_display = "None" if category_to_show == "none" else category_to_show
-            env_display = self._get_env_display(s, category_to_show)
-
-            card = QFrame()
-            card.setObjectName("scriptCard")
-            card.setMinimumWidth(0)
-            card.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
-            card_layout = QVBoxLayout(card)
-            card_layout.setContentsMargins(16, 14, 16, 14)
-            card_layout.setSpacing(10)
-
-            title_row = QHBoxLayout()
-            name_lbl = QLabel(display_name)
-            name_lbl.setObjectName("cardTitleLabel")
-            name_lbl.setWordWrap(True)
-            title_row.addWidget(name_lbl, 1)
-            is_fav = s["path"] in favorites
-            fav_btn = QPushButton("★" if is_fav else "☆")
-            fav_btn.setObjectName("favBtn")
-            fav_btn.setToolTip("Unfavorite" if is_fav else "Favorite")
-            fav_btn.setFixedSize(32, 32)
-            title_row.addWidget(fav_btn, 0)
-            card_layout.addLayout(title_row)
-
-            meta_row = QHBoxLayout()
-            meta_row.setSpacing(12)
-            category_combo = NoWheelComboBox()
-            category_combo.addItems(CATEGORY_OPTIONS)
-            category_combo.setCurrentText(category_display)
-            category_combo.setMinimumWidth(100)
-            env_label = QLabel(env_display)
-            meta_row.addWidget(category_combo)
-            meta_row.addWidget(env_label, 1)
-            card_layout.addLayout(meta_row)
-
-            status_label = QLabel(PLACEHOLDER)
-            pid_label = QLabel(PLACEHOLDER)
-            status_row = QHBoxLayout()
-            status_row.addWidget(QLabel("Status:"))
-            status_row.addWidget(status_label)
-            status_row.addSpacing(12)
-            status_row.addWidget(QLabel("PID:"))
-            status_row.addWidget(pid_label)
-            status_row.addStretch()
-            card_layout.addLayout(status_row)
-
-            metrics_grid = QGridLayout()
-            metric_specs = [
-                ("CPU %", "cpu_pct_label"),
-                ("RAM (RSS)", "ram_rss_label"),
-                ("RAM %", "ram_pct_label"),
-                ("Elapsed", "elapsed_label"),
-                ("Peak memory", "peak_mem_label"),
-                ("CPU time", "cpu_time_label"),
-                ("Threads", "threads_label"),
-            ]
-            metric_widgets = {}
-            for i, (title, key) in enumerate(metric_specs):
-                r, c = i // 2, (i % 2) * 2
-                metrics_grid.addWidget(QLabel(title + ":"), r, c)
-                w = QLabel(PLACEHOLDER)
-                w.setObjectName("metricValueLabel")
-                metrics_grid.addWidget(w, r, c + 1)
-                metric_widgets[key] = w
-            cpu_pct_label = metric_widgets["cpu_pct_label"]
-            ram_rss_label = metric_widgets["ram_rss_label"]
-            ram_pct_label = metric_widgets["ram_pct_label"]
-            elapsed_label = metric_widgets["elapsed_label"]
-            peak_mem_label = metric_widgets["peak_mem_label"]
-            cpu_time_label = metric_widgets["cpu_time_label"]
-            threads_label = metric_widgets["threads_label"]
-            card_layout.addLayout(metrics_grid)
-
-            btn_layout = QHBoxLayout()
-            run_btn = QPushButton("Run")
-            run_btn.setObjectName("runBtn")
-            kill_btn = QPushButton("Kill")
-            kill_btn.setObjectName("killBtn")
-            kill_btn.setVisible(False)
-            btn_layout.addWidget(run_btn)
-            btn_layout.addWidget(kill_btn)
-            btn_layout.addStretch()
-            card_layout.addLayout(btn_layout)
-
-            def _on_category_change(script_path, combo, env_lbl):
-                val = combo.currentText()
-                stored = "none" if val == "None" else val
-                save_script_category(script_path, stored)
-                env_lbl.setText(self._get_env_display({"path": script_path}, stored))
-
-            category_combo.currentTextChanged.connect(
-                lambda text, sp=s["path"], cb=category_combo, el=env_label: _on_category_change(sp, cb, el)
-            )
-
-            row_dict = {
-                "script": s,
-                "card": card,
-                "fav_btn": fav_btn,
-                "category_combo": category_combo,
-                "status_label": status_label,
-                "pid_label": pid_label,
-                "cpu_pct_label": cpu_pct_label,
-                "ram_rss_label": ram_rss_label,
-                "ram_pct_label": ram_pct_label,
-                "elapsed_label": elapsed_label,
-                "peak_mem_label": peak_mem_label,
-                "cpu_time_label": cpu_time_label,
-                "threads_label": threads_label,
-                "run_btn": run_btn,
-                "kill_btn": kill_btn,
+        self.script_categories = load_script_categories()
+        self.scripts.sort(key=lambda s: s["path"].lower())
+        for script in self.scripts:
+            row = {
+                "script": script,
                 "process": None,
                 "kill_pids": None,
                 "start_time": None,
                 "peak_rss": 0.0,
                 "cpu_primed_pids": None,
             }
-            self.script_rows.append(row_dict)
-            run_btn.clicked.connect(lambda checked=False, r=row_dict: self._run_script_row(r))
-            kill_btn.clicked.connect(lambda checked=False, r=row_dict: self._kill_script_row(r))
-            fav_btn.clicked.connect(lambda checked=False, r=row_dict: self._on_favorite_clicked(r))
+            self.script_rows.append(row)
 
-        self._refresh_folder_filter()
-        self._rebuild_cards_layout()
-
-    def _set_status(self, row: dict, text: str) -> None:
-        row["status_label"].setText(text)
-        color = {
-            "—": PALETTE["status_placeholder"],
-            "Running": PALETTE["status_running"],
-            "Stopped": PALETTE["status_stopped"],
-        }.get(text, PALETTE["status_placeholder"])
-        row["status_label"].setStyleSheet(f"color: {color};")
+        self._refresh_sidebar()
+        if self.scripts:
+            paths = {s["path"] for s in self.scripts}
+            if self._selected_script_path not in paths:
+                self._select_script(self.scripts[0]["path"])
+            else:
+                self._render_detail_panel()
+        else:
+            self._selected_script_path = None
+            self._render_detail_panel()
 
     def _run_script_row(self, row: dict) -> None:
         try:
-            cat = row["category_combo"].currentText()
-            category = "none" if cat == "None" else cat
-            p = run_script_in_gitbash(
+            category = self._get_category_for_script(row["script"]["path"])
+            proc = run_script_in_gitbash(
                 row["script"]["path"],
                 category,
                 self.project_path,
                 terminal_path=self.terminal_path,
                 venv_activate_path=self.venv_activate_path,
             )
-            row["process"] = p
+            row["process"] = proc
             row["kill_pids"] = None
             row["start_time"] = time.monotonic()
             row["peak_rss"] = 0.0
             row["cpu_primed_pids"] = set()
-            self._set_status(row, "Running")
-            row["pid_label"].setText(str(p.pid))
-            for key in ("cpu_pct_label", "ram_rss_label", "ram_pct_label", "elapsed_label", "peak_mem_label", "cpu_time_label", "threads_label"):
-                row[key].setText(PLACEHOLDER)
-            row["kill_btn"].setVisible(True)
             delay_ms = int(utils.TREE_CAPTURE_DELAY_SEC * 1000)
             QTimer.singleShot(delay_ms, lambda: self._capture_kill_pids(row))
+            if row["script"]["path"] == self._selected_script_path:
+                self._render_detail_panel()
+            self._refresh_sidebar_dots()
             QMessageBox.information(self, "ShScriptHub", f"Script '{row['script']['name']}' started.")
-        except Exception as e:
-            QMessageBox.critical(self, "ShScriptHub - Error", str(e))
+        except Exception as exc:
+            QMessageBox.critical(self, "ShScriptHub - Error", str(exc))
 
     def _capture_kill_pids(self, row: dict) -> None:
         proc = row.get("process")
@@ -593,42 +907,41 @@ class ShScriptHubApp(QMainWindow):
         if not kill_pids and proc.poll() is None:
             kill_pids = [proc.pid]
         kill_script_process(proc, kill_pids=kill_pids)
-        self._set_status(row, "Stopped")
-        row["pid_label"].setText(PLACEHOLDER)
         row["process"] = None
         row["kill_pids"] = None
         row["start_time"] = None
         row["peak_rss"] = 0.0
         row["cpu_primed_pids"] = None
-        for key in ("cpu_pct_label", "ram_rss_label", "ram_pct_label", "elapsed_label", "peak_mem_label", "cpu_time_label", "threads_label"):
-            row[key].setText(PLACEHOLDER)
-        row["kill_btn"].setVisible(False)
+        if row["script"]["path"] == self._selected_script_path:
+            self._render_detail_panel()
+        self._refresh_sidebar_dots()
 
     def check_processes(self) -> None:
-        for row in getattr(self, "script_rows", []):
+        changed = False
+        for row in self.script_rows:
             proc = row.get("process")
             if proc is None:
                 continue
-            if proc.poll() is not None:
-                self._set_status(row, "Stopped")
-                row["pid_label"].setText(PLACEHOLDER)
-                row["process"] = None
-                row["start_time"] = None
-                row["peak_rss"] = 0.0
-                row["cpu_primed_pids"] = None
-                for key in ("cpu_pct_label", "ram_rss_label", "ram_pct_label", "elapsed_label", "peak_mem_label", "cpu_time_label", "threads_label"):
-                    row[key].setText(PLACEHOLDER)
-                kill_btn = row.get("kill_btn")
-                if kill_btn:
-                    kill_btn.setVisible(False)
+            if proc.poll() is None:
+                continue
+            row["process"] = None
+            row["kill_pids"] = None
+            row["start_time"] = None
+            row["peak_rss"] = 0.0
+            row["cpu_primed_pids"] = None
+            changed = True
+            if row["script"]["path"] == self._selected_script_path:
+                self._render_detail_panel()
+        if changed:
+            self._refresh_sidebar_dots()
 
     def _update_row_metrics(self, row: dict) -> None:
+        if row["script"]["path"] != self._selected_script_path:
+            return
         proc = row.get("process")
         if proc is None or proc.poll() is not None:
             return
-        pids = row.get("kill_pids")
-        if not pids:
-            pids = [proc.pid]
+        pids = row.get("kill_pids") or [proc.pid]
         start_time = row.get("start_time") or 0
         peak_rss = row.get("peak_rss") or 0.0
         cpu_primed_pids = row.get("cpu_primed_pids")
@@ -636,20 +949,20 @@ class ShScriptHubApp(QMainWindow):
             cpu_primed_pids = set()
             row["cpu_primed_pids"] = cpu_primed_pids
         try:
-            m = collect_metrics(pids, start_time, peak_rss, cpu_primed_pids)
+            metrics = collect_metrics(pids, start_time, peak_rss, cpu_primed_pids)
         except Exception:
             return
-        row["peak_rss"] = m["peak_rss_bytes"]
-        row["cpu_pct_label"].setText(f"{m['cpu_percent']:.1f}%")
-        row["ram_rss_label"].setText(f"{m['rss_mb']:.2f} MB")
-        row["ram_pct_label"].setText(f"{m['ram_percent']:.1f}%")
-        row["elapsed_label"].setText(format_elapsed(m["elapsed_sec"]))
-        row["peak_mem_label"].setText(f"{m['peak_rss_mb']:.2f} MB")
-        row["cpu_time_label"].setText(format_cpu_time(m["cpu_time_sec"]))
-        row["threads_label"].setText(str(m["num_threads"]))
+        row["peak_rss"] = metrics["peak_rss_bytes"]
+        self.detail_cpu_pct_label.setText(f"{metrics['cpu_percent']:.1f}%")
+        self.detail_ram_rss_label.setText(f"{metrics['rss_mb']:.2f} MB")
+        self.detail_ram_pct_label.setText(f"{metrics['ram_percent']:.1f}%")
+        self.detail_elapsed_label.setText(format_elapsed(metrics["elapsed_sec"]))
+        self.detail_peak_mem_label.setText(f"{metrics['peak_rss_mb']:.2f} MB")
+        self.detail_cpu_time_label.setText(format_cpu_time(metrics["cpu_time_sec"]))
+        self.detail_threads_label.setText(str(metrics["num_threads"]))
 
     def _tick_process_check(self) -> None:
         self.check_processes()
-        for row in getattr(self, "script_rows", []):
-            if row.get("process") is not None and row["process"].poll() is None:
-                self._update_row_metrics(row)
+        row = self._get_row(self._selected_script_path)
+        if row and self._is_row_running(row):
+            self._update_row_metrics(row)

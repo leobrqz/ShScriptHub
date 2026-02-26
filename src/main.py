@@ -4,13 +4,14 @@ from PySide6.QtWidgets import QApplication
 from PySide6.QtGui import QIcon
 from PySide6.QtCore import Qt
 from theme import get_stylesheet
+from config import load_theme
 from gui import ShScriptHubApp
 from utils import get_resource_path
 
 
 def main():
     app = QApplication(sys.argv)
-    app.setStyleSheet(get_stylesheet())
+    app.setStyleSheet(get_stylesheet(load_theme()))
     try:
         app.setAttribute(Qt.AA_UseStyleSheetPalette)
     except AttributeError:

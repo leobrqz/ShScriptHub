@@ -1,11 +1,17 @@
 import os
+import sys
 import json
 
 CONFIG_FILENAME = "config.json"
 
 
 def get_config_path() -> str:
-    app_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    if getattr(sys, "frozen", False):
+        # PyInstaller bundle — place config.json next to the .exe
+        app_dir = os.path.dirname(sys.executable)
+    else:
+        # Running from source — place config.json at the repo root (parent of src/)
+        app_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     return os.path.join(app_dir, CONFIG_FILENAME)
 
 
@@ -89,6 +95,17 @@ def load_favorites() -> set:
 def save_favorites(paths: set) -> None:
     data = _load_all()
     data["favorites"] = list(paths)
+    _save_all(data)
+
+
+def load_theme() -> str:
+    raw = _load_all().get("theme", "dark").strip()
+    return raw if raw in ("dark", "light") else "dark"
+
+
+def save_theme(theme: str) -> None:
+    data = _load_all()
+    data["theme"] = theme
     _save_all(data)
 
 
