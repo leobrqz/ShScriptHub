@@ -23,8 +23,8 @@ def main():
         except Exception as e:
             print(f"Warning: Could not set icon: {e}")
     window = ShScriptHubApp()
-    window.resize(900, 520)
-    window.setMinimumSize(520, 360)
+    window.resize(1050, 640)
+    # window.setMinimumSize(520, 360)
     window.show()
     sys.exit(app.exec())
 

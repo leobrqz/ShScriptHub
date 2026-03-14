@@ -404,9 +404,7 @@ QPushButton#newScheduleBtn:hover {{
     background-color: {p["sidebar_selected_border"]};
 }}
 QWidget#scheduleRow {{
-    background-color: {p["bg_card"]};
-    border: 1px solid {p["border"]};
-    border-radius: 6px;
+    background-color: transparent;
 }}
 QWidget#scheduleRow:hover {{
     background-color: {p["menu_item_hover"]};
@@ -421,13 +419,11 @@ QLabel#scheduleHeaderLabel {{
     font-size: 8pt;
 }}
 QPushButton#enableToggleBtn {{
-    border-radius: 10px;
-    min-width: 40px;
-    max-width: 44px;
-    padding: 3px 8px;
+    padding: 2px 4px;
     font-size: 8pt;
     font-weight: 600;
     border: none;
+    border-radius: 4px;
 }}
 QPushButton#enableToggleBtn[enabled_state="false"] {{
     background-color: {p["dot_stopped"]};
@@ -437,13 +433,16 @@ QPushButton#enableToggleBtn[enabled_state="true"] {{
     background-color: {p["status_running"]};
     color: {p["btn_text"]};
 }}
+QPushButton#enableToggleBtn:hover {{
+    opacity: 0.9;
+}}
 QPushButton#scheduleDeleteBtn {{
     background-color: transparent;
     color: {p["text_muted"]};
     min-width: 0;
-    padding: 2px 6px;
-    border-radius: 3px;
-    font-size: 12pt;
+    padding: 2px 4px;
+    border-radius: 2px;
+    font-size: 11pt;
     border: none;
 }}
 QPushButton#scheduleDeleteBtn:hover {{

@@ -235,30 +235,54 @@ class SchedulerContentWidget(QWidget):
             self.refresh_history()
 
     # ------------------------------------------------------------------
-    # Schedule rows (QGridLayout for column alignment)
+    # Schedule rows (shared column widths via fixed-size button wrappers)
     # ------------------------------------------------------------------
 
-    SCHEDULE_COLUMN_STRETCH = (3, 3, 2, 1, 0)
+    SCHEDULE_COLUMN_STRETCH = (3, 3, 2, 0, 0, 0)
+    SCHEDULE_COL_MIN_WIDTHS = (0, 0, 0, 56, 24, 52)
+    ENABLED_COL_WIDTH = 64
+    SPACER_WIDTH = 24
+    ACTION_COL_WIDTH = 32
 
-    def _make_schedule_grid_row(self, contents_margins: tuple[int, int, int, int] = (0, 0, 0, 0)):
+    def _make_schedule_grid_row(self, contents_margins: tuple[int, int, int, int]):
         row = QWidget()
         grid = QGridLayout(row)
         grid.setContentsMargins(*contents_margins)
         grid.setHorizontalSpacing(8)
         for col, stretch in enumerate(self.SCHEDULE_COLUMN_STRETCH):
             grid.setColumnStretch(col, stretch)
+        for col, min_w in enumerate(self.SCHEDULE_COL_MIN_WIDTHS):
+            if min_w > 0:
+                grid.setColumnMinimumWidth(col, min_w)
         return row, grid
 
     def _make_schedules_header_row(self):
         row, grid = self._make_schedule_grid_row((12, 4, 12, 4))
-        for col, text in enumerate(["Name", "Script", "Next Run", "Enabled", ""]):
+        header_cols = [
+            ("Name", 0, False),
+            ("Script", 1, False),
+            ("Next Run", 2, False),
+            ("Enabled", 3, self.ENABLED_COL_WIDTH),
+            ("", 4, self.SPACER_WIDTH),
+            ("Action", 5, self.ACTION_COL_WIDTH),
+        ]
+        for text, col, cell_width in header_cols:
             lbl = QLabel(text)
             lbl.setObjectName("scheduleHeaderLabel")
-            grid.addWidget(lbl, 0, col)
+            if cell_width:
+                cell = QWidget()
+                cell.setFixedWidth(cell_width)
+                cell_layout = QHBoxLayout(cell)
+                cell_layout.setContentsMargins(0, 0, 0, 0)
+                cell_layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
+                cell_layout.addWidget(lbl)
+                grid.addWidget(cell, 0, col)
+            else:
+                grid.addWidget(lbl, 0, col)
         return row
 
     def _make_schedule_row(self, schedule):
-        row, grid = self._make_schedule_grid_row((12, 8, 12, 8))
+        row, grid = self._make_schedule_grid_row((12, 6, 12, 6))
         row.setObjectName("scheduleRow")
         row.setCursor(Qt.CursorShape.PointingHandCursor)
 
@@ -279,16 +303,33 @@ class SchedulerContentWidget(QWidget):
         toggle = QPushButton("ON" if enabled else "OFF")
         toggle.setObjectName("enableToggleBtn")
         toggle.setProperty("enabled_state", "true" if enabled else "false")
-        toggle.setFixedWidth(44)
-        schedule_id = schedule["id"]
-        toggle.clicked.connect(lambda _=False, sid=schedule_id: self._on_toggle_enabled(sid))
-        grid.addWidget(toggle, 0, 3)
+        toggle.setFixedSize(40, 22)
+        toggle.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
+        toggle.clicked.connect(lambda _=False, sid=schedule["id"]: self._on_toggle_enabled(sid))
+        toggle_cell = QWidget()
+        toggle_cell.setFixedWidth(self.ENABLED_COL_WIDTH)
+        toggle_layout = QHBoxLayout(toggle_cell)
+        toggle_layout.setContentsMargins(0, 0, 0, 0)
+        toggle_layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        toggle_layout.addWidget(toggle)
+        grid.addWidget(toggle_cell, 0, 3)
+
+        spacer = QWidget()
+        spacer.setFixedWidth(self.SPACER_WIDTH)
+        grid.addWidget(spacer, 0, 4)
 
         delete_btn = QPushButton("×")
         delete_btn.setObjectName("scheduleDeleteBtn")
-        delete_btn.setFixedWidth(28)
+        delete_btn.setFixedSize(28, 22)
+        delete_btn.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
         delete_btn.clicked.connect(lambda _=False, s=dict(schedule): self._on_delete_schedule(s))
-        grid.addWidget(delete_btn, 0, 4)
+        delete_cell = QWidget()
+        delete_cell.setFixedWidth(self.ACTION_COL_WIDTH)
+        delete_layout = QHBoxLayout(delete_cell)
+        delete_layout.setContentsMargins(0, 0, 0, 0)
+        delete_layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        delete_layout.addWidget(delete_btn)
+        grid.addWidget(delete_cell, 0, 5)
 
         def _on_row_click(event, s=dict(schedule)):
             self._on_edit_schedule(s)
