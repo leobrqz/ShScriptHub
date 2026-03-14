@@ -438,6 +438,8 @@ class ScheduleDialog(QDialog):
 
     def __init__(self, scripts, project_path, schedule=None, parent=None):
         super().__init__(parent)
+        self.setObjectName("scheduleDialog")
+        self.setAttribute(Qt.WA_StyledBackground, True)
         self._scripts = scripts
         self._project_path = project_path
         self._schedule = schedule

@@ -108,6 +108,46 @@ QWidget {{
 QLabel {{
     color: {p["text_secondary"]};
 }}
+QLineEdit, QComboBox, QSpinBox {{
+    background-color: {p["input_bg"]};
+    color: {p["text_primary"]};
+    border: 1px solid {p["border"]};
+    border-radius: 6px;
+    padding: 6px 10px;
+}}
+QComboBox::drop-down {{
+    border: none;
+    width: 18px;
+}}
+QComboBox QAbstractItemView {{
+    background-color: {p["menu_bg"]};
+    border: 1px solid {p["border"]};
+    color: {p["text_primary"]};
+    selection-background-color: {p["menu_item_hover"]};
+}}
+QCheckBox, QRadioButton {{
+    color: {p["text_primary"]};
+}}
+QCheckBox::indicator, QRadioButton::indicator {{
+    width: 16px;
+    height: 16px;
+    border: 1px solid {p["border"]};
+    border-radius: 3px;
+    background-color: {p["input_bg"]};
+}}
+QRadioButton::indicator {{
+    border-radius: 8px;
+}}
+QCheckBox::indicator:checked, QRadioButton::indicator:checked {{
+    background-color: {p["accent"]};
+    border-color: {p["accent"]};
+}}
+QCheckBox::indicator:hover, QRadioButton::indicator:hover {{
+    border-color: {p["accent"]};
+}}
+QDialog {{
+    background-color: {p["bg_detail"]};
+}}
 QWidget#topBar {{
     background-color: {p["top_bar_bg"]};
     border-bottom: 1px solid {p["border"]};
@@ -228,23 +268,6 @@ QPushButton#favBtn {{
 }}
 QPushButton#favBtn:hover {{
     color: {p["fav_btn_hover"]};
-}}
-QLineEdit#searchEdit, QComboBox#categoryCombo, QComboBox#detailCategoryCombo {{
-    background-color: {p["input_bg"]};
-    color: {p["text_primary"]};
-    border: 1px solid {p["border"]};
-    border-radius: 6px;
-    padding: 6px 10px;
-}}
-QComboBox::drop-down {{
-    border: none;
-    width: 18px;
-}}
-QComboBox QAbstractItemView {{
-    background-color: {p["menu_bg"]};
-    border: 1px solid {p["border"]};
-    color: {p["text_primary"]};
-    selection-background-color: {p["menu_item_hover"]};
 }}
 QMenu {{
     background-color: {p["menu_bg"]};
