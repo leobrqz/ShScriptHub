@@ -20,6 +20,7 @@ from PySide6.QtWidgets import (
     QPushButton,
     QScrollArea,
     QSplitter,
+    QStackedWidget,
     QVBoxLayout,
     QWidget,
 )
@@ -43,6 +44,16 @@ from metrics import PLACEHOLDER, collect_metrics, format_cpu_time, format_elapse
 from script_manager import ScriptManager
 from theme import DARK_PALETTE, LIGHT_PALETTE, get_stylesheet
 from utils import get_process_tree_after_spawn, kill_script_process, run_script_in_gitbash
+
+from scheduler_data import create_history_entry, now_iso
+from scheduler_engine import get_due_schedules, validate_trigger
+from scheduler_storage import (
+    append_history_entry,
+    load_schedules,
+    save_schedules,
+    update_history_entry,
+)
+from scheduler_ui import SchedulerContentWidget
 
 CATEGORY_OPTIONS = ("None", "backend", "frontend")
 CATEGORY_FILTER_OPTIONS = ("All", "Backend", "Frontend", "Running")
@@ -236,11 +247,18 @@ class ShScriptHubApp(QMainWindow):
         self.paths_row = self._build_paths_row()
         layout.addWidget(self.paths_row)
 
+        self.page_selector = self._build_page_selector()
+        layout.addWidget(self.page_selector)
+
         self.body_splitter = QSplitter(Qt.Horizontal)
         self.sidebar_panel = self._build_sidebar()
         self.detail_panel = self._build_detail_panel()
+        self._scheduler_widget = SchedulerContentWidget(self)
+        self._content_stack = QStackedWidget()
+        self._content_stack.addWidget(self.detail_panel)
+        self._content_stack.addWidget(self._scheduler_widget)
         self.body_splitter.addWidget(self.sidebar_panel)
-        self.body_splitter.addWidget(self.detail_panel)
+        self.body_splitter.addWidget(self._content_stack)
         self.body_splitter.setStretchFactor(0, 0)
         self.body_splitter.setStretchFactor(1, 1)
         self.body_splitter.setSizes([SIDEBAR_WIDTH, 900])
@@ -259,6 +277,10 @@ class ShScriptHubApp(QMainWindow):
         self._tick_timer.timeout.connect(self._tick_process_check)
         self._tick_timer.start(1000)
         QTimer.singleShot(100, self._ensure_terminal_path)
+
+        self._scheduler_timer = QTimer(self)
+        self._scheduler_timer.timeout.connect(self._scheduler_tick)
+        self._scheduler_timer.start(15000)
 
     @property
     def _palette(self) -> dict:
@@ -326,6 +348,8 @@ class ShScriptHubApp(QMainWindow):
         self._theme_btn.setText("☀ Light" if self._theme == "dark" else "🌙 Dark")
         self._sh_highlighter.update_palette(self._palette)
         self._line_gutter.update_palette(self._palette)
+        if hasattr(self, "_scheduler_widget"):
+            self._scheduler_widget.refresh_current_view()
 
     def _build_paths_row(self) -> QWidget:
         row_widget = QWidget()
@@ -745,6 +769,7 @@ class ShScriptHubApp(QMainWindow):
 
     def _select_script(self, path: str) -> None:
         self._selected_script_path = path
+        self._switch_page("home")
         self._render_detail_panel()
         self._refresh_sidebar_selection()
 
@@ -1035,6 +1060,7 @@ class ShScriptHubApp(QMainWindow):
                 "start_time": None,
                 "peak_rss": 0.0,
                 "cpu_primed_pids": None,
+                "scheduler_history_id": None,
             }
             self.script_rows.append(row)
 
@@ -1104,6 +1130,13 @@ class ShScriptHubApp(QMainWindow):
                 continue
             if proc.poll() is None:
                 continue
+            history_id = row.get("scheduler_history_id")
+            if history_id:
+                update_history_entry(history_id, {
+                    "status": "exited",
+                    "finished_at": now_iso(),
+                })
+                row["scheduler_history_id"] = None
             row["process"] = None
             row["kill_pids"] = None
             row["start_time"] = None
@@ -1146,3 +1179,160 @@ class ShScriptHubApp(QMainWindow):
         row = self._get_row(self._selected_script_path)
         if row and self._is_row_running(row):
             self._update_row_metrics(row)
+
+    # ------------------------------------------------------------------
+    # Page selector
+    # ------------------------------------------------------------------
+
+    def _build_page_selector(self) -> QWidget:
+        selector = QWidget()
+        selector.setObjectName("pageSelector")
+        selector.setFixedHeight(32)
+        row = QHBoxLayout(selector)
+        row.setContentsMargins(12, 0, 12, 0)
+        row.setSpacing(4)
+
+        self._home_page_btn = QPushButton("Home")
+        self._home_page_btn.setObjectName("pageSelectorBtn")
+        self._home_page_btn.clicked.connect(lambda: self._switch_page("home"))
+        row.addWidget(self._home_page_btn)
+
+        self._scheduler_page_btn = QPushButton("Scheduler")
+        self._scheduler_page_btn.setObjectName("pageSelectorBtn")
+        self._scheduler_page_btn.clicked.connect(lambda: self._switch_page("scheduler"))
+        row.addWidget(self._scheduler_page_btn)
+
+        row.addStretch()
+
+        self._current_page = "home"
+        self._update_page_selector_styles()
+        return selector
+
+    def _switch_page(self, page: str) -> None:
+        self._current_page = page
+        if page == "home":
+            self._content_stack.setCurrentIndex(0)
+        else:
+            self._content_stack.setCurrentIndex(1)
+            self._scheduler_widget.refresh_schedules()
+        self._update_page_selector_styles()
+
+    def _update_page_selector_styles(self) -> None:
+        self._home_page_btn.setProperty("active", "true" if self._current_page == "home" else "false")
+        self._scheduler_page_btn.setProperty("active", "true" if self._current_page == "scheduler" else "false")
+        for btn in (self._home_page_btn, self._scheduler_page_btn):
+            btn.style().unpolish(btn)
+            btn.style().polish(btn)
+
+    # ------------------------------------------------------------------
+    # Scheduler engine integration
+    # ------------------------------------------------------------------
+
+    def _scheduler_tick(self) -> None:
+        if not self.project_path:
+            return
+        schedules = load_schedules()
+        due = get_due_schedules(schedules)
+        if not due:
+            return
+        for schedule in due:
+            self._execute_scheduled_run(schedule)
+        save_schedules(schedules)
+        self._refresh_sidebar_dots()
+
+    def _execute_scheduled_run(self, schedule: dict) -> None:
+        script_path = schedule["script_path"]
+        triggered_at = now_iso()
+
+        error = validate_trigger(script_path, self.project_path)
+        if error:
+            entry = create_history_entry(
+                schedule_id=schedule["id"],
+                schedule_name=schedule["name"],
+                script_path=script_path,
+                triggered_at=triggered_at,
+                started_at=None,
+                status="failed",
+                error_message=error,
+            )
+            append_history_entry(entry)
+            self._mark_schedule_triggered(schedule)
+            return
+
+        row = self._get_row(script_path)
+
+        if row and self._is_row_running(row):
+            history_id = row.get("scheduler_history_id")
+            if history_id:
+                update_history_entry(history_id, {
+                    "status": "killed",
+                    "finished_at": now_iso(),
+                })
+                row["scheduler_history_id"] = None
+            kill_script_process(row.get("process"), kill_pids=row.get("kill_pids"))
+            try:
+                proc = row.get("process")
+                if proc:
+                    proc.wait(timeout=3)
+            except Exception:
+                pass
+            row["process"] = None
+            row["kill_pids"] = None
+            row["start_time"] = None
+            row["peak_rss"] = 0.0
+            row["cpu_primed_pids"] = None
+
+        try:
+            category = self._get_category_for_script(script_path)
+            proc = run_script_in_gitbash(
+                script_path,
+                category,
+                self.project_path,
+                terminal_path=self.terminal_path,
+                venv_activate_path=self.venv_activate_path,
+            )
+            started_at = now_iso()
+
+            if row:
+                row["process"] = proc
+                row["kill_pids"] = None
+                row["start_time"] = time.monotonic()
+                row["peak_rss"] = 0.0
+                row["cpu_primed_pids"] = set()
+                delay_ms = int(utils.TREE_CAPTURE_DELAY_SEC * 1000)
+                QTimer.singleShot(delay_ms, lambda r=row: self._capture_kill_pids(r))
+
+            entry = create_history_entry(
+                schedule_id=schedule["id"],
+                schedule_name=schedule["name"],
+                script_path=script_path,
+                triggered_at=triggered_at,
+                started_at=started_at,
+                status="started",
+            )
+            append_history_entry(entry)
+
+            if row:
+                row["scheduler_history_id"] = entry["id"]
+
+            self._mark_schedule_triggered(schedule)
+
+            if script_path == self._selected_script_path:
+                self._render_detail_panel()
+        except Exception as exc:
+            entry = create_history_entry(
+                schedule_id=schedule["id"],
+                schedule_name=schedule["name"],
+                script_path=script_path,
+                triggered_at=triggered_at,
+                started_at=None,
+                status="failed",
+                error_message=str(exc),
+            )
+            append_history_entry(entry)
+            self._mark_schedule_triggered(schedule)
+
+    def _mark_schedule_triggered(self, schedule: dict) -> None:
+        schedule["last_triggered_at"] = now_iso()
+        if schedule["rule_type"] == "interval":
+            schedule["interval_base_at"] = now_iso()

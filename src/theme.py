@@ -321,4 +321,133 @@ QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal {{
 QScrollBar::add-page:horizontal, QScrollBar::sub-page:horizontal {{
     background: transparent;
 }}
+QWidget#pageSelector {{
+    background-color: {p["bg_main"]};
+    border-bottom: 1px solid {p["border"]};
+}}
+QWidget#schedulerContent {{
+    background-color: {p["bg_detail"]};
+}}
+QWidget#schedulerContent QStackedWidget {{
+    background-color: {p["bg_detail"]};
+}}
+QWidget#schedulerContent QScrollArea {{
+    background-color: {p["bg_detail"]};
+}}
+QWidget#schedulerContent QScrollArea > QWidget {{
+    background-color: {p["bg_detail"]};
+}}
+QPushButton#pageSelectorBtn {{
+    background-color: transparent;
+    color: {p["text_secondary"]};
+    border-radius: 0px;
+    min-width: 0;
+    padding: 4px 12px;
+    font-weight: 500;
+    border: none;
+    border-bottom: 2px solid transparent;
+}}
+QPushButton#pageSelectorBtn:hover {{
+    color: {p["text_primary"]};
+}}
+QPushButton#pageSelectorBtn[active="true"] {{
+    color: {p["accent"]};
+    border-bottom: 2px solid {p["accent"]};
+    font-weight: 600;
+}}
+QPushButton#schedulerTabBtn {{
+    background-color: transparent;
+    color: {p["text_secondary"]};
+    border-radius: 0px;
+    min-width: 0;
+    padding: 4px 12px;
+    font-weight: 500;
+    border: none;
+    border-bottom: 2px solid transparent;
+}}
+QPushButton#schedulerTabBtn:hover {{
+    color: {p["text_primary"]};
+}}
+QPushButton#schedulerTabBtn[active="true"] {{
+    color: {p["accent"]};
+    border-bottom: 2px solid {p["accent"]};
+    font-weight: 600;
+}}
+QPushButton#newScheduleBtn {{
+    background-color: {p["accent"]};
+    color: {p["btn_text"]};
+}}
+QPushButton#newScheduleBtn:hover {{
+    background-color: {p["sidebar_selected_border"]};
+}}
+QWidget#scheduleRow {{
+    background-color: {p["bg_card"]};
+    border: 1px solid {p["border"]};
+    border-radius: 6px;
+}}
+QWidget#scheduleRow:hover {{
+    background-color: {p["menu_item_hover"]};
+}}
+QLabel#scheduleNameLabel {{
+    color: {p["text_primary"]};
+    font-weight: 500;
+}}
+QLabel#scheduleHeaderLabel {{
+    color: {p["text_muted"]};
+    font-weight: 600;
+    font-size: 8pt;
+}}
+QPushButton#enableToggleBtn {{
+    border-radius: 10px;
+    min-width: 40px;
+    max-width: 44px;
+    padding: 3px 8px;
+    font-size: 8pt;
+    font-weight: 600;
+    border: none;
+}}
+QPushButton#enableToggleBtn[enabled_state="false"] {{
+    background-color: {p["dot_stopped"]};
+    color: {p["btn_text"]};
+}}
+QPushButton#enableToggleBtn[enabled_state="true"] {{
+    background-color: {p["status_running"]};
+    color: {p["btn_text"]};
+}}
+QPushButton#scheduleDeleteBtn {{
+    background-color: transparent;
+    color: {p["text_muted"]};
+    min-width: 0;
+    padding: 2px 6px;
+    border-radius: 3px;
+    font-size: 12pt;
+    border: none;
+}}
+QPushButton#scheduleDeleteBtn:hover {{
+    color: {p["kill_btn_bg"]};
+    background-color: {p["menu_item_hover"]};
+}}
+QLabel#emptyStateLabel {{
+    color: {p["text_muted"]};
+}}
+QLabel#historyStatusLabel {{
+    font-weight: 600;
+}}
+QLabel#historyStatusLabel[status_type="started"] {{
+    color: {p["status_running"]};
+}}
+QLabel#historyStatusLabel[status_type="killed"] {{
+    color: {p["kill_btn_bg"]};
+}}
+QLabel#historyStatusLabel[status_type="exited"] {{
+    color: {p["text_secondary"]};
+}}
+QLabel#historyStatusLabel[status_type="failed"] {{
+    color: {p["kill_btn_bg"]};
+}}
+QLabel#historySubLabel {{
+    color: {p["text_muted"]};
+    font-size: 8pt;
+    padding-left: 4px;
+}}
 """
