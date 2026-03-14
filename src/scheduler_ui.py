@@ -5,8 +5,10 @@ Separated from gui.py to keep modules focused.
 import os
 from datetime import datetime
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, QTimer
+from PySide6.QtGui import QIcon
 from PySide6.QtWidgets import (
+    QStyle,
     QButtonGroup,
     QCheckBox,
     QComboBox,
@@ -36,8 +38,9 @@ from scheduler_data import (
     now_iso,
     validate_schedule,
 )
-from scheduler_engine import format_next_run
+from scheduler_engine import format_next_run_countdown, format_rule_display
 from scheduler_storage import load_history, load_schedules, save_schedules
+import utils
 
 HISTORY_FILTER_OPTIONS = ("All", "started", "killed", "exited", "failed")
 STATUS_DISPLAY = {
@@ -56,6 +59,11 @@ class SchedulerContentWidget(QWidget):
         self.setObjectName("schedulerContent")
         self.setAttribute(Qt.WA_StyledBackground, True)
         self._main = main_window
+        self._schedule_row_map: dict[str, "QLabel"] = {}
+        self._schedule_status_map: dict[str, "QLabel"] = {}
+        self._countdown_timer = QTimer(self)
+        self._countdown_timer.timeout.connect(self._countdown_tick)
+        self._countdown_timer.start(1000)
         self._build_ui()
 
     @property
@@ -115,7 +123,7 @@ class SchedulerContentWidget(QWidget):
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(8)
 
-        new_btn = QPushButton("+ New Schedule")
+        new_btn = QPushButton("New Schedule")
         new_btn.setObjectName("newScheduleBtn")
         new_btn.clicked.connect(self._on_new_schedule)
         top_row = QHBoxLayout()
@@ -139,7 +147,7 @@ class SchedulerContentWidget(QWidget):
         self._schedules_scroll.setWidget(self._schedules_container)
         layout.addWidget(self._schedules_scroll, 1)
 
-        self._schedules_empty = QLabel("No schedules. Click + New Schedule to create one.")
+        self._schedules_empty = QLabel("No schedules. Click New Schedule to create one.")
         self._schedules_empty.setObjectName("emptyStateLabel")
         self._schedules_empty.setAlignment(Qt.AlignmentFlag.AlignCenter)
         layout.addWidget(self._schedules_empty, 1)
@@ -189,6 +197,8 @@ class SchedulerContentWidget(QWidget):
     # ------------------------------------------------------------------
 
     def refresh_schedules(self):
+        self._schedule_row_map.clear()
+        self._schedule_status_map.clear()
         while self._schedules_layout.count() > 2:
             item = self._schedules_layout.takeAt(1)
             w = item.widget()
@@ -234,12 +244,28 @@ class SchedulerContentWidget(QWidget):
         else:
             self.refresh_history()
 
+    def _countdown_tick(self):
+        if not self.isVisible() or self._tab_stack.currentIndex() != 0:
+            return
+        schedules = load_schedules()
+        for schedule in schedules:
+            sid = schedule.get("id")
+            next_lbl = self._schedule_row_map.get(sid)
+            if next_lbl is not None:
+                next_lbl.setText(format_next_run_countdown(schedule))
+            status_lbl = self._schedule_status_map.get(sid)
+            if status_lbl is not None:
+                script_path = schedule.get("script_path", "")
+                script_row = self._main._get_row(script_path) if script_path else None
+                running = self._main._is_row_running(script_row) if script_row is not None else False
+                status_lbl.setText("Running" if running else "—")
+
     # ------------------------------------------------------------------
     # Schedule rows (shared column widths via fixed-size button wrappers)
     # ------------------------------------------------------------------
 
-    SCHEDULE_COLUMN_STRETCH = (3, 3, 2, 0, 0, 0)
-    SCHEDULE_COL_MIN_WIDTHS = (0, 0, 0, 56, 24, 52)
+    SCHEDULE_COLUMN_STRETCH = (3, 3, 2, 2, 1, 0, 0, 0)
+    SCHEDULE_COL_MIN_WIDTHS = (0, 0, 0, 0, 0, 56, 24, 52)
     ENABLED_COL_WIDTH = 64
     SPACER_WIDTH = 24
     ACTION_COL_WIDTH = 32
@@ -261,10 +287,12 @@ class SchedulerContentWidget(QWidget):
         header_cols = [
             ("Name", 0, False),
             ("Script", 1, False),
-            ("Next Run", 2, False),
-            ("Enabled", 3, self.ENABLED_COL_WIDTH),
-            ("", 4, self.SPACER_WIDTH),
-            ("Action", 5, self.ACTION_COL_WIDTH),
+            ("Rule", 2, False),
+            ("Next Run", 3, False),
+            ("Status", 4, False),
+            ("Enabled", 5, self.ENABLED_COL_WIDTH),
+            ("", 6, self.SPACER_WIDTH),
+            ("Action", 7, self.ACTION_COL_WIDTH),
         ]
         for text, col, cell_width in header_cols:
             lbl = QLabel(text)
@@ -295,9 +323,20 @@ class SchedulerContentWidget(QWidget):
         script_lbl = QLabel(rel)
         grid.addWidget(script_lbl, 0, 1)
 
-        next_run_text = format_next_run(schedule)
+        rule_lbl = QLabel(format_rule_display(schedule))
+        grid.addWidget(rule_lbl, 0, 2)
+
+        next_run_text = format_next_run_countdown(schedule)
         next_lbl = QLabel(next_run_text)
-        grid.addWidget(next_lbl, 0, 2)
+        self._schedule_row_map[schedule["id"]] = next_lbl
+        grid.addWidget(next_lbl, 0, 3)
+
+        script_path = schedule.get("script_path", "")
+        script_row = self._main._get_row(script_path) if script_path else None
+        running = self._main._is_row_running(script_row) if script_row is not None else False
+        status_lbl = QLabel("Running" if running else "—")
+        self._schedule_status_map[schedule["id"]] = status_lbl
+        grid.addWidget(status_lbl, 0, 4)
 
         enabled = schedule.get("enabled", False)
         toggle = QPushButton("ON" if enabled else "OFF")
@@ -312,16 +351,21 @@ class SchedulerContentWidget(QWidget):
         toggle_layout.setContentsMargins(0, 0, 0, 0)
         toggle_layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
         toggle_layout.addWidget(toggle)
-        grid.addWidget(toggle_cell, 0, 3)
+        grid.addWidget(toggle_cell, 0, 5)
 
         spacer = QWidget()
         spacer.setFixedWidth(self.SPACER_WIDTH)
-        grid.addWidget(spacer, 0, 4)
+        grid.addWidget(spacer, 0, 6)
 
-        delete_btn = QPushButton("×")
+        delete_btn = QPushButton()
         delete_btn.setObjectName("scheduleDeleteBtn")
+        trash_path = utils.get_resource_path("assets/trash.svg")
+        delete_btn.setIcon(
+            QIcon(trash_path) if os.path.isfile(trash_path) else self.style().standardIcon(QStyle.StandardPixmap.SP_TrashIcon)
+        )
         delete_btn.setFixedSize(28, 22)
         delete_btn.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
+        delete_btn.setToolTip("Delete schedule")
         delete_btn.clicked.connect(lambda _=False, s=dict(schedule): self._on_delete_schedule(s))
         delete_cell = QWidget()
         delete_cell.setFixedWidth(self.ACTION_COL_WIDTH)
@@ -329,12 +373,12 @@ class SchedulerContentWidget(QWidget):
         delete_layout.setContentsMargins(0, 0, 0, 0)
         delete_layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
         delete_layout.addWidget(delete_btn)
-        grid.addWidget(delete_cell, 0, 5)
+        grid.addWidget(delete_cell, 0, 7)
 
         def _on_row_click(event, s=dict(schedule)):
             self._on_edit_schedule(s)
         row.mousePressEvent = _on_row_click
-        for w in (name_lbl, script_lbl, next_lbl):
+        for w in (name_lbl, script_lbl, rule_lbl, next_lbl, status_lbl):
             w.mousePressEvent = _on_row_click
         return row
 
@@ -386,19 +430,39 @@ class SchedulerContentWidget(QWidget):
         status_lbl.setProperty("status_type", status)
         grid.addWidget(status_lbl, 0, 3)
 
+        def _fmt_started(s):
+            if not s:
+                return None
+            try:
+                dt = datetime.fromisoformat(s)
+                return dt.strftime("%Y-%m-%d %H:%M:%S")
+            except (ValueError, TypeError):
+                return s[:19] if s else None
+
         sub_text = None
+        started_str = _fmt_started(run.get("started_at"))
         if status == "failed":
             sub_text = run.get("error_message", "Unknown error")
+            if started_str:
+                sub_text = f"Started: {started_str}\n{sub_text}"
         elif status == "exited":
+            parts = []
+            if started_str:
+                parts.append(f"Started: {started_str}")
             finished = run.get("finished_at", "")
             if finished:
                 try:
                     dt = datetime.fromisoformat(finished)
-                    sub_text = f"finished: {dt.strftime('%Y-%m-%d %H:%M:%S')}"
+                    parts.append(f"Finished: {dt.strftime('%Y-%m-%d %H:%M:%S')}")
                 except (ValueError, TypeError):
-                    sub_text = f"finished: {finished}"
+                    parts.append(f"Finished: {finished}")
+            sub_text = "\n".join(parts) if parts else None
         elif status == "killed":
-            sub_text = "previous instance terminated by scheduler"
+            sub_text = "Previous instance terminated by scheduler"
+            if started_str:
+                sub_text = f"Started: {started_str}\n{sub_text}"
+        elif status == "started" and started_str:
+            sub_text = f"Started: {started_str}"
 
         if sub_text:
             sub_lbl = QLabel(sub_text)
@@ -460,7 +524,10 @@ class SchedulerContentWidget(QWidget):
         schedules = load_schedules()
         for s in schedules:
             if s["id"] == schedule_id:
-                s["enabled"] = not s.get("enabled", False)
+                was_enabled = s.get("enabled", False)
+                s["enabled"] = not was_enabled
+                if s["enabled"] and s.get("rule_type") == "interval":
+                    s["interval_base_at"] = now_iso()
                 break
         save_schedules(schedules)
         self.refresh_schedules()

@@ -129,6 +129,49 @@ def format_next_run(schedule: dict) -> str:
     return next_run.strftime("%a %H:%M")
 
 
+def format_next_run_countdown(schedule: dict) -> str:
+    """Second-precision countdown for live display. Returns 'Disabled' when disabled."""
+    if not schedule.get("enabled", False):
+        return "Disabled"
+
+    next_run = get_next_run(schedule)
+    if next_run is None:
+        return "—"
+
+    now = _now_local()
+    delta = next_run - now
+    total_seconds = int(delta.total_seconds())
+
+    if total_seconds <= 0:
+        return "Now"
+
+    hours = total_seconds // 3600
+    minutes = (total_seconds % 3600) // 60
+    seconds = total_seconds % 60
+
+    if hours > 0:
+        return f"{hours}h {minutes}m {seconds}s"
+    if minutes > 0:
+        return f"{minutes}m {seconds}s"
+    return f"{seconds}s"
+
+
+def format_rule_display(schedule: dict) -> str:
+    """Human-readable rule type and value for table display."""
+    rule_type = schedule.get("rule_type")
+    rule = schedule.get("rule") or {}
+    if rule_type == "interval":
+        value = rule.get("value", 0)
+        unit = rule.get("unit", "minutes")
+        suffix = "min" if unit == "minutes" else "h"
+        return f"Interval: {value}{suffix}"
+    if rule_type == "time":
+        hour = rule.get("hour", 0)
+        minute = rule.get("minute", 0)
+        return f"Time: {hour:02d}:{minute:02d}"
+    return "—"
+
+
 def get_due_schedules(schedules: list[dict]) -> list[dict]:
     now = _now_local()
     due = []

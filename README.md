@@ -18,7 +18,7 @@ A `.sh` script runner for anyone tired of hopping between folders and scripts. I
 
 ## Features
 
-### Toolbar
+### Toolbar and navigation
 
 Compact toolbar at the top of the window:
 
@@ -26,6 +26,8 @@ Compact toolbar at the top of the window:
 - **Terminal** — Set Git Bash path
 - **Venv** — Set venv activate path for scripts that interact with Python | Clear venv path to revert to auto-detect
 - **Theme toggle** — Switch between dark and light themes (persisted across restarts)
+
+- **Page selector** — Switch between **Home** (script detail panel) and **Scheduler** (schedules and run history). The sidebar remains visible in both views.
 
 All settings, per-script categories, and favorites are stored in `config.json` in the app directory.
 
@@ -73,6 +75,26 @@ The detail panel includes a read-only viewer that displays the selected script's
 - Horizontally scrollable for long lines.
 - Colors adapt to the active theme (dark or light).
 
+### Scheduler
+
+A dedicated **Scheduler** page (via the Home | Scheduler selector) lets you run scripts automatically on a schedule.
+
+**Schedules view:**
+
+- **New Schedule** — Create time-based (specific hour:minute) or interval-based (every N minutes/hours) schedules.
+- **Table columns** — Name, Script, Rule, Next Run, Status, Enabled toggle, Delete.
+- **Live countdown** — When a schedule is enabled, the Next Run column updates every second. When disabled, shows "Disabled".
+- **Interval reset on enable** — Toggling a disabled interval schedule back ON resets the countdown from the full interval.
+- **Row actions** — Click a row to edit; use the toggle to enable/disable; use the trash icon to delete.
+
+**History view:**
+
+- **Filter** — All, started, killed, exited, failed.
+- **Columns** — Schedule name, Script path, Time, Status.
+- **Sub-row details** — Started and Finished timestamps on separate lines; for killed runs, shows "Previous instance terminated by scheduler".
+- **Manual kill detection** — When you manually kill a scheduled script, the history entry is updated to "killed" with the correct finished time.
+
+Schedules and run history are stored in `schedules.json` and `scheduler_history.json` in the app directory.
 
 ## How scripts are discovered
 

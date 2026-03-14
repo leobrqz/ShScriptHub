@@ -280,7 +280,7 @@ class ShScriptHubApp(QMainWindow):
 
         self._scheduler_timer = QTimer(self)
         self._scheduler_timer.timeout.connect(self._scheduler_tick)
-        self._scheduler_timer.start(15000)
+        self._scheduler_timer.start(1000)
 
     @property
     def _palette(self) -> dict:
@@ -1109,6 +1109,13 @@ class ShScriptHubApp(QMainWindow):
         proc = row.get("process")
         if proc is None:
             return
+        history_id = row.get("scheduler_history_id")
+        if history_id:
+            update_history_entry(history_id, {
+                "status": "killed",
+                "finished_at": now_iso(),
+            })
+            row["scheduler_history_id"] = None
         kill_pids = row.get("kill_pids")
         if not kill_pids and proc.poll() is None:
             kill_pids = [proc.pid]
