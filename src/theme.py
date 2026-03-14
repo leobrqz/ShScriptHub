@@ -471,6 +471,5 @@ QLabel#historyStatusLabel[status_type="failed"] {{
 QLabel#historySubLabel {{
     color: {p["text_muted"]};
     font-size: 8pt;
-    padding-left: 4px;
 }}
 """

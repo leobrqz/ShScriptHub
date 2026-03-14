@@ -13,6 +13,7 @@ from PySide6.QtWidgets import (
     QDialog,
     QFileDialog,
     QFrame,
+    QGridLayout,
     QHBoxLayout,
     QLabel,
     QLineEdit,
@@ -20,6 +21,7 @@ from PySide6.QtWidgets import (
     QPushButton,
     QRadioButton,
     QScrollArea,
+    QSizePolicy,
     QSpinBox,
     QStackedWidget,
     QVBoxLayout,
@@ -121,16 +123,6 @@ class SchedulerContentWidget(QWidget):
         top_row.addStretch()
         layout.addLayout(top_row)
 
-        header = QWidget()
-        header_layout = QHBoxLayout(header)
-        header_layout.setContentsMargins(12, 4, 12, 4)
-        header_layout.setSpacing(8)
-        for text, stretch in [("Name", 3), ("Script", 3), ("Next Run", 2), ("Enabled", 1), ("", 1)]:
-            lbl = QLabel(text)
-            lbl.setObjectName("scheduleHeaderLabel")
-            header_layout.addWidget(lbl, stretch)
-        layout.addWidget(header)
-
         self._schedules_scroll = QScrollArea()
         self._schedules_scroll.setFrameShape(QFrame.Shape.NoFrame)
         self._schedules_scroll.setWidgetResizable(True)
@@ -139,6 +131,10 @@ class SchedulerContentWidget(QWidget):
         self._schedules_layout = QVBoxLayout(self._schedules_container)
         self._schedules_layout.setContentsMargins(0, 0, 0, 0)
         self._schedules_layout.setSpacing(4)
+
+        self._schedules_header = self._make_schedules_header_row()
+        self._schedules_layout.addWidget(self._schedules_header)
+
         self._schedules_layout.addStretch()
         self._schedules_scroll.setWidget(self._schedules_container)
         layout.addWidget(self._schedules_scroll, 1)
@@ -165,16 +161,6 @@ class SchedulerContentWidget(QWidget):
         filter_row.addStretch()
         layout.addLayout(filter_row)
 
-        header = QWidget()
-        header_layout = QHBoxLayout(header)
-        header_layout.setContentsMargins(12, 4, 12, 4)
-        header_layout.setSpacing(8)
-        for text, stretch in [("Time", 2), ("Schedule", 2), ("Script", 2), ("Status", 1)]:
-            lbl = QLabel(text)
-            lbl.setObjectName("scheduleHeaderLabel")
-            header_layout.addWidget(lbl, stretch)
-        layout.addWidget(header)
-
         self._history_scroll = QScrollArea()
         self._history_scroll.setFrameShape(QFrame.Shape.NoFrame)
         self._history_scroll.setWidgetResizable(True)
@@ -183,6 +169,10 @@ class SchedulerContentWidget(QWidget):
         self._history_layout = QVBoxLayout(self._history_container)
         self._history_layout.setContentsMargins(0, 0, 0, 0)
         self._history_layout.setSpacing(4)
+
+        self._history_header = self._make_history_header_row()
+        self._history_layout.addWidget(self._history_header)
+
         self._history_layout.addStretch()
         self._history_scroll.setWidget(self._history_container)
         layout.addWidget(self._history_scroll, 1)
@@ -199,8 +189,8 @@ class SchedulerContentWidget(QWidget):
     # ------------------------------------------------------------------
 
     def refresh_schedules(self):
-        while self._schedules_layout.count():
-            item = self._schedules_layout.takeAt(0)
+        while self._schedules_layout.count() > 2:
+            item = self._schedules_layout.takeAt(1)
             w = item.widget()
             if w:
                 w.hide()
@@ -213,12 +203,11 @@ class SchedulerContentWidget(QWidget):
 
         for schedule in schedules:
             row_w = self._make_schedule_row(schedule)
-            self._schedules_layout.addWidget(row_w)
-        self._schedules_layout.addStretch()
+            self._schedules_layout.insertWidget(self._schedules_layout.count() - 1, row_w)
 
     def refresh_history(self):
-        while self._history_layout.count():
-            item = self._history_layout.takeAt(0)
+        while self._history_layout.count() > 2:
+            item = self._history_layout.takeAt(1)
             w = item.widget()
             if w:
                 w.hide()
@@ -237,8 +226,7 @@ class SchedulerContentWidget(QWidget):
 
         for run in runs:
             row_w = self._make_history_row(run)
-            self._history_layout.addWidget(row_w)
-        self._history_layout.addStretch()
+            self._history_layout.insertWidget(self._history_layout.count() - 1, row_w)
 
     def refresh_current_view(self):
         if self._tab_stack.currentIndex() == 0:
@@ -247,29 +235,45 @@ class SchedulerContentWidget(QWidget):
             self.refresh_history()
 
     # ------------------------------------------------------------------
-    # Schedule rows
+    # Schedule rows (QGridLayout for column alignment)
     # ------------------------------------------------------------------
 
-    def _make_schedule_row(self, schedule):
+    SCHEDULE_COLUMN_STRETCH = (3, 3, 2, 1, 0)
+
+    def _make_schedule_grid_row(self, contents_margins: tuple[int, int, int, int] = (0, 0, 0, 0)):
         row = QWidget()
+        grid = QGridLayout(row)
+        grid.setContentsMargins(*contents_margins)
+        grid.setHorizontalSpacing(8)
+        for col, stretch in enumerate(self.SCHEDULE_COLUMN_STRETCH):
+            grid.setColumnStretch(col, stretch)
+        return row, grid
+
+    def _make_schedules_header_row(self):
+        row, grid = self._make_schedule_grid_row((12, 4, 12, 4))
+        for col, text in enumerate(["Name", "Script", "Next Run", "Enabled", ""]):
+            lbl = QLabel(text)
+            lbl.setObjectName("scheduleHeaderLabel")
+            grid.addWidget(lbl, 0, col)
+        return row
+
+    def _make_schedule_row(self, schedule):
+        row, grid = self._make_schedule_grid_row((12, 8, 12, 8))
         row.setObjectName("scheduleRow")
         row.setCursor(Qt.CursorShape.PointingHandCursor)
-        layout = QHBoxLayout(row)
-        layout.setContentsMargins(12, 8, 12, 8)
-        layout.setSpacing(8)
 
         name_lbl = QLabel(schedule["name"])
         name_lbl.setObjectName("scheduleNameLabel")
-        layout.addWidget(name_lbl, 3)
+        grid.addWidget(name_lbl, 0, 0)
 
         script_path = schedule.get("script_path", "")
         rel = self._relative_script_path(script_path)
         script_lbl = QLabel(rel)
-        layout.addWidget(script_lbl, 3)
+        grid.addWidget(script_lbl, 0, 1)
 
         next_run_text = format_next_run(schedule)
         next_lbl = QLabel(next_run_text)
-        layout.addWidget(next_lbl, 2)
+        grid.addWidget(next_lbl, 0, 2)
 
         enabled = schedule.get("enabled", False)
         toggle = QPushButton("ON" if enabled else "OFF")
@@ -278,26 +282,52 @@ class SchedulerContentWidget(QWidget):
         toggle.setFixedWidth(44)
         schedule_id = schedule["id"]
         toggle.clicked.connect(lambda _=False, sid=schedule_id: self._on_toggle_enabled(sid))
-        layout.addWidget(toggle, 1)
+        grid.addWidget(toggle, 0, 3)
 
         delete_btn = QPushButton("×")
         delete_btn.setObjectName("scheduleDeleteBtn")
         delete_btn.setFixedWidth(28)
         delete_btn.clicked.connect(lambda _=False, s=dict(schedule): self._on_delete_schedule(s))
-        layout.addWidget(delete_btn, 0)
+        grid.addWidget(delete_btn, 0, 4)
 
-        row.mousePressEvent = lambda event, s=dict(schedule): self._on_edit_schedule(s)
+        def _on_row_click(event, s=dict(schedule)):
+            self._on_edit_schedule(s)
+        row.mousePressEvent = _on_row_click
+        for w in (name_lbl, script_lbl, next_lbl):
+            w.mousePressEvent = _on_row_click
+        return row
+
+    HISTORY_COLUMN_STRETCH = (2, 2, 2, 1)
+
+    def _make_history_grid_row(self, contents_margins: tuple[int, int, int, int] = (0, 0, 0, 0)):
+        row = QWidget()
+        grid = QGridLayout(row)
+        grid.setContentsMargins(*contents_margins)
+        grid.setHorizontalSpacing(8)
+        grid.setVerticalSpacing(2)
+        for col, stretch in enumerate(self.HISTORY_COLUMN_STRETCH):
+            grid.setColumnStretch(col, stretch)
+        return row, grid
+
+    def _make_history_header_row(self):
+        row, grid = self._make_history_grid_row((12, 4, 12, 4))
+        for col, text in enumerate(["Schedule", "Script", "Time", "Status"]):
+            lbl = QLabel(text)
+            lbl.setObjectName("scheduleHeaderLabel")
+            grid.addWidget(lbl, 0, col)
         return row
 
     def _make_history_row(self, run):
-        row = QWidget()
+        row, grid = self._make_history_grid_row((12, 6, 12, 6))
         row.setObjectName("scheduleRow")
-        main_layout = QVBoxLayout(row)
-        main_layout.setContentsMargins(12, 6, 12, 6)
-        main_layout.setSpacing(2)
 
-        top_row = QHBoxLayout()
-        top_row.setSpacing(8)
+        name_lbl = QLabel(run.get("schedule_name", "—"))
+        grid.addWidget(name_lbl, 0, 0)
+
+        script_path = run.get("script_path", "")
+        rel = self._relative_script_path(script_path)
+        script_lbl = QLabel(rel)
+        grid.addWidget(script_lbl, 0, 1)
 
         triggered = run.get("triggered_at", "")
         try:
@@ -306,24 +336,14 @@ class SchedulerContentWidget(QWidget):
         except (ValueError, TypeError):
             time_str = triggered[:16] if triggered else "—"
         time_lbl = QLabel(time_str)
-        top_row.addWidget(time_lbl, 2)
-
-        name_lbl = QLabel(run.get("schedule_name", "—"))
-        top_row.addWidget(name_lbl, 2)
-
-        script_path = run.get("script_path", "")
-        rel = self._relative_script_path(script_path)
-        script_lbl = QLabel(rel)
-        top_row.addWidget(script_lbl, 2)
+        grid.addWidget(time_lbl, 0, 2)
 
         status = run.get("status", "—")
         status_display = STATUS_DISPLAY.get(status, status.upper())
         status_lbl = QLabel(status_display)
         status_lbl.setObjectName("historyStatusLabel")
         status_lbl.setProperty("status_type", status)
-        top_row.addWidget(status_lbl, 1)
-
-        main_layout.addLayout(top_row)
+        grid.addWidget(status_lbl, 0, 3)
 
         sub_text = None
         if status == "failed":
@@ -342,7 +362,7 @@ class SchedulerContentWidget(QWidget):
         if sub_text:
             sub_lbl = QLabel(sub_text)
             sub_lbl.setObjectName("historySubLabel")
-            main_layout.addWidget(sub_lbl)
+            grid.addWidget(sub_lbl, 1, 0, 1, 4)
 
         return row
 

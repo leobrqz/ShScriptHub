@@ -3,6 +3,10 @@ __pycache__
 
 
 config.json
+schedules.json
+scheduler_history.json
+
+
 
 release
 build
