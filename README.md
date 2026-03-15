@@ -14,7 +14,21 @@
 
 A `.sh` script runner for anyone tired of hopping between folders and scripts. It scans your selected folder to build a centralized hub, opens a new terminal per script for easier project management and auto-detects Python environments.
 
-![interface](assets/interface.png)
+<details>
+<summary><strong>Preview</strong></summary>
+
+<div align="center">
+
+<img src="assets/InterfaceHome.png" alt="Preview main" width="800" />
+
+
+
+<img src="assets/InterfaceScheduler.png" alt="Preview 2" width="400" />
+<img src="assets/InterfaceHistory.png" alt="Preview 3" width="400" />
+
+</div>
+
+</details>
 
 ## Features
 
