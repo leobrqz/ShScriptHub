@@ -125,6 +125,32 @@ QComboBox QAbstractItemView {{
     color: {p["text_primary"]};
     selection-background-color: {p["menu_item_hover"]};
 }}
+QAbstractItemView {{
+    background-color: {p["menu_bg"]};
+    border: 1px solid {p["border"]};
+    color: {p["text_primary"]};
+    selection-background-color: {p["menu_item_hover"]};
+}}
+QFrame#spinboxArrowsContainer {{
+    background-color: {p["input_bg"]};
+    border: 1px solid {p["border"]};
+    border-radius: 4px;
+}}
+QPushButton#spinboxArrowBtn {{
+    background-color: {p["input_bg"]};
+    color: {p["text_primary"]};
+    border: none;
+    border-radius: 2px;
+    font-size: 7pt;
+    min-width: 0;
+    padding: 0;
+}}
+QPushButton#spinboxArrowBtn:hover {{
+    background-color: {p["menu_item_hover"]};
+}}
+QPushButton#spinboxArrowBtn:pressed {{
+    background-color: {p["border"]};
+}}
 QCheckBox, QRadioButton {{
     color: {p["text_primary"]};
 }}
@@ -409,6 +435,10 @@ QWidget#scheduleRow {{
 QWidget#scheduleRow:hover {{
     background-color: {p["menu_item_hover"]};
 }}
+QWidget#scheduleRow[selected="true"] {{
+    background-color: {p["sidebar_selected_bg"]};
+    border-left: 2px solid {p["sidebar_selected_border"]};
+}}
 QLabel#scheduleNameLabel {{
     color: {p["text_primary"]};
     font-weight: 500;
@@ -470,5 +500,22 @@ QLabel#historyStatusLabel[status_type="failed"] {{
 QLabel#historySubLabel {{
     color: {p["text_muted"]};
     font-size: 8pt;
+}}
+QPushButton#historyLogCloseBtn {{
+    background-color: transparent;
+    color: {p["kill_btn_bg"]};
+    font-size: 14px;
+    font-weight: 600;
+    border: 1px solid {p["border"]};
+    border-radius: 4px;
+    min-width: 0;
+    padding: 2px 4px;
+}}
+QPushButton#historyLogCloseBtn:hover {{
+    background-color: rgba(185, 28, 28, 0.12);
+    color: {p["kill_btn_bg"]};
+}}
+QPushButton#historyLogCloseBtn:pressed {{
+    background-color: rgba(185, 28, 28, 0.2);
 }}
 """

@@ -1,11 +1,14 @@
 .venv
 __pycache__
 
+.github
 
 config.json
 schedules.json
 scheduler_history.json
+history_logs.json
 
+Scheduler
 
 
 release

@@ -83,6 +83,50 @@ def run_script_in_gitbash(
     )
 
 
+def run_script_in_gitbash_captured(
+    script_path: str,
+    category: str,
+    project_path: str,
+    log_file_path: str,
+    terminal_path: str | None = None,
+    venv_activate_path: str | None = None,
+) -> subprocess.Popen:
+    """
+    Runs a .sh script with output captured to a log file. No terminal window.
+    Script stdout/stderr are redirected to log_file_path via tee. Caller must
+    poll the file and persist to history_logs.
+    """
+    system = platform.system()
+    is_windows = system == "Windows"
+    cwd = os.path.dirname(script_path)
+    script_name = os.path.basename(script_path)
+
+    activate_cmd = _get_activate_cmd(cwd, category, venv_activate_path, is_windows, project_path)
+    if activate_cmd:
+        inner_cmd = f"{activate_cmd} && bash {script_name}"
+    else:
+        inner_cmd = f"bash {script_name}"
+
+    log_path_bash = os.path.abspath(log_file_path).replace("\\", "/")
+    command = f"( trap '' INT; ({inner_cmd}) 2>&1 | tee '{log_path_bash}' ); exec bash"
+
+    if is_windows:
+        exe = (terminal_path or "").strip()
+        if not exe or not os.path.exists(exe):
+            raise FileNotFoundError("Terminal executable not found. Set it in Terminal → Set terminal path.")
+        return subprocess.Popen(
+            [exe, f"--cd={cwd}", "-c", command],
+            shell=False,
+        )
+
+    return subprocess.Popen(
+        command,
+        shell=True,
+        executable="/bin/bash",
+        cwd=cwd,
+    )
+
+
 def _get_children_windows(pid: int) -> list[int]:
     """Returns PIDs of child processes of pid on Windows (PowerShell or wmic)."""
     creationflags = subprocess.CREATE_NO_WINDOW if hasattr(subprocess, "CREATE_NO_WINDOW") else 0

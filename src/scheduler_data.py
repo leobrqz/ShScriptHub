@@ -5,7 +5,6 @@ import uuid
 from datetime import datetime, timezone
 
 VALID_RULE_TYPES = ("time", "interval")
-VALID_INTERVAL_UNITS = ("minutes", "hours")
 VALID_STATUSES = ("started", "killed", "exited", "failed")
 MAX_NAME_LENGTH = 128
 HISTORY_RETENTION = 1000
@@ -53,15 +52,20 @@ def validate_time_rule(rule: dict) -> list[str]:
 
 def validate_interval_rule(rule: dict) -> list[str]:
     errors = []
-    value = rule.get("value")
-    unit = rule.get("unit")
+    minutes = rule.get("minutes", 0)
+    hours = rule.get("hours", 0)
 
-    if not isinstance(value, int) or value < 1:
-        errors.append("Interval value must be a positive integer.")
-    if unit not in VALID_INTERVAL_UNITS:
-        errors.append(f"Interval unit must be one of: {', '.join(VALID_INTERVAL_UNITS)}.")
-    if isinstance(value, int) and unit == "hours" and value > MAX_INTERVAL_HOURS:
-        errors.append(f"Interval in hours must be at most {MAX_INTERVAL_HOURS}.")
+    if not isinstance(minutes, int) or minutes < 0:
+        errors.append("Interval minutes must be a non-negative integer.")
+    if not isinstance(hours, int) or hours < 0:
+        errors.append("Interval hours must be a non-negative integer.")
+    if isinstance(minutes, int) and isinstance(hours, int):
+        if minutes > 9999:
+            errors.append("Interval minutes must be at most 9999.")
+        if hours > MAX_INTERVAL_HOURS:
+            errors.append(f"Interval hours must be at most {MAX_INTERVAL_HOURS}.")
+        if minutes == 0 and hours == 0:
+            errors.append("Set at least one of minutes or hours to a value greater than 0.")
     return errors
 
 

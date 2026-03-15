@@ -50,8 +50,16 @@ def _next_run_time_based(schedule: dict) -> datetime | None:
 
 def _next_run_interval_based(schedule: dict) -> datetime | None:
     rule = schedule["rule"]
-    value = rule["value"]
-    unit = rule["unit"]
+    minutes = rule.get("minutes")
+    hours = rule.get("hours")
+    if minutes is None and hours is None and "value" in rule and "unit" in rule:
+        value = rule.get("value", 0) or 0
+        unit = rule.get("unit", "minutes")
+        minutes = value if unit == "minutes" else 0
+        hours = value if unit == "hours" else 0
+    else:
+        minutes = (minutes or 0) if minutes is not None else 0
+        hours = (hours or 0) if hours is not None else 0
 
     base_str = schedule.get("interval_base_at") or schedule.get("created_at")
     if not base_str:
@@ -59,7 +67,7 @@ def _next_run_interval_based(schedule: dict) -> datetime | None:
 
     base = _parse_iso(base_str)
     now = _now_local()
-    delta = timedelta(minutes=value) if unit == "minutes" else timedelta(hours=value)
+    delta = timedelta(hours=hours, minutes=minutes)
     delta_seconds = delta.total_seconds()
 
     if delta_seconds <= 0:
@@ -161,10 +169,22 @@ def format_rule_display(schedule: dict) -> str:
     rule_type = schedule.get("rule_type")
     rule = schedule.get("rule") or {}
     if rule_type == "interval":
-        value = rule.get("value", 0)
-        unit = rule.get("unit", "minutes")
-        suffix = "min" if unit == "minutes" else "h"
-        return f"Interval: {value}{suffix}"
+        minutes = rule.get("minutes")
+        hours = rule.get("hours")
+        if minutes is None and hours is None and "value" in rule and "unit" in rule:
+            value = rule.get("value", 0) or 0
+            unit = rule.get("unit", "minutes")
+            minutes = value if unit == "minutes" else 0
+            hours = value if unit == "hours" else 0
+        else:
+            minutes = (minutes or 0) if minutes is not None else 0
+            hours = (hours or 0) if hours is not None else 0
+        parts = []
+        if hours:
+            parts.append(f"{hours}h")
+        if minutes:
+            parts.append(f"{minutes}min")
+        return "Interval: " + " ".join(parts) if parts else "Interval: —"
     if rule_type == "time":
         hour = rule.get("hour", 0)
         minute = rule.get("minute", 0)
