@@ -1,4 +1,5 @@
 import os
+import threading
 import time
 from typing import Callable, Optional
 
@@ -43,13 +44,16 @@ from config import (
 from metrics import PLACEHOLDER, collect_metrics, format_cpu_time, format_elapsed
 from script_manager import ScriptManager
 from theme import DARK_PALETTE, LIGHT_PALETTE, get_stylesheet
-from utils import get_process_tree_after_spawn, kill_script_process, run_script_in_gitbash
+from utils import get_process_tree_after_spawn, kill_script_process, run_script_in_gitbash, run_script_in_gitbash_captured
 
 from scheduler_data import create_history_entry, now_iso
 from scheduler_engine import get_due_schedules, validate_trigger
 from scheduler_storage import (
     append_history_entry,
+    append_log,
+    get_run_log_file_path,
     load_schedules,
+    replace_log,
     save_schedules,
     update_history_entry,
 )
@@ -1247,6 +1251,38 @@ class ShScriptHubApp(QMainWindow):
         save_schedules(schedules)
         self._refresh_sidebar_dots()
 
+    def _log_reader_thread(self, process, run_id: str) -> None:
+        """Reads process.stdout and appends to history_logs. Runs in background thread."""
+        if process is None or process.stdout is None:
+            return
+        try:
+            for line in process.stdout:
+                if line:
+                    append_log(run_id, line)
+        except (ValueError, OSError):
+            pass
+
+    def _log_file_poll_thread(self, process, run_id: str, log_file_path: str) -> None:
+        """Polls log file written by script (redirect inside bash). Avoids Git Bash pipe issues on Windows."""
+        while process.poll() is None:
+            time.sleep(0.25)
+            try:
+                with open(log_file_path, encoding="utf-8", errors="replace") as f:
+                    content = f.read()
+                replace_log(run_id, content)
+            except (OSError, FileNotFoundError):
+                pass
+        try:
+            with open(log_file_path, encoding="utf-8", errors="replace") as f:
+                content = f.read()
+            replace_log(run_id, content)
+        except (OSError, FileNotFoundError):
+            pass
+        try:
+            os.remove(log_file_path)
+        except OSError:
+            pass
+
     def _execute_scheduled_run(self, schedule: dict) -> None:
         script_path = schedule["script_path"]
         triggered_at = now_iso()
@@ -1289,16 +1325,35 @@ class ShScriptHubApp(QMainWindow):
             row["peak_rss"] = 0.0
             row["cpu_primed_pids"] = None
 
+        entry = create_history_entry(
+            schedule_id=schedule["id"],
+            schedule_name=schedule["name"],
+            script_path=script_path,
+            triggered_at=triggered_at,
+            started_at=now_iso(),
+            status="started",
+        )
+        append_history_entry(entry)
+        append_log(entry["id"], "")
+
         try:
             category = self._get_category_for_script(script_path)
-            proc = run_script_in_gitbash(
+            log_file_path = get_run_log_file_path(entry["id"])
+            proc = run_script_in_gitbash_captured(
                 script_path,
                 category,
                 self.project_path,
                 terminal_path=self.terminal_path,
                 venv_activate_path=self.venv_activate_path,
+                log_file_path=log_file_path,
             )
-            started_at = now_iso()
+
+            poller = threading.Thread(
+                target=self._log_file_poll_thread,
+                args=(proc, entry["id"], log_file_path),
+                daemon=True,
+            )
+            poller.start()
 
             if row:
                 row["process"] = proc
@@ -1309,16 +1364,6 @@ class ShScriptHubApp(QMainWindow):
                 delay_ms = int(utils.TREE_CAPTURE_DELAY_SEC * 1000)
                 QTimer.singleShot(delay_ms, lambda r=row: self._capture_kill_pids(r))
 
-            entry = create_history_entry(
-                schedule_id=schedule["id"],
-                schedule_name=schedule["name"],
-                script_path=script_path,
-                triggered_at=triggered_at,
-                started_at=started_at,
-                status="started",
-            )
-            append_history_entry(entry)
-
             if row:
                 row["scheduler_history_id"] = entry["id"]
 
@@ -1327,16 +1372,11 @@ class ShScriptHubApp(QMainWindow):
             if script_path == self._selected_script_path:
                 self._render_detail_panel()
         except Exception as exc:
-            entry = create_history_entry(
-                schedule_id=schedule["id"],
-                schedule_name=schedule["name"],
-                script_path=script_path,
-                triggered_at=triggered_at,
-                started_at=None,
-                status="failed",
-                error_message=str(exc),
-            )
-            append_history_entry(entry)
+            update_history_entry(entry["id"], {
+                "status": "failed",
+                "started_at": None,
+                "error_message": str(exc),
+            })
             self._mark_schedule_triggered(schedule)
 
     def _mark_schedule_triggered(self, schedule: dict) -> None:

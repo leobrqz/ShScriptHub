@@ -83,6 +83,76 @@ def run_script_in_gitbash(
     )
 
 
+def run_script_in_gitbash_captured(
+    script_path: str,
+    category: str,
+    project_path: str,
+    terminal_path: str | None = None,
+    venv_activate_path: str | None = None,
+    log_file_path: str | None = None,
+) -> subprocess.Popen:
+    """
+    Runs a .sh script with output captured for logging. No terminal window.
+    When log_file_path is set, script stdout/stderr are redirected to that file
+    (avoids Git Bash on Windows not writing to PIPE). Caller must poll the file
+    and persist to history_logs. When log_file_path is None, uses PIPE (may not
+    work on Windows with Git Bash).
+    """
+    system = platform.system()
+    is_windows = system == "Windows"
+    cwd = os.path.dirname(script_path)
+    script_name = os.path.basename(script_path)
+
+    activate_cmd = _get_activate_cmd(cwd, category, venv_activate_path, is_windows, project_path)
+    if activate_cmd:
+        inner_cmd = f"{activate_cmd} && bash {script_name}"
+    else:
+        inner_cmd = f"bash {script_name}"
+
+    creationflags = 0
+    if is_windows and hasattr(subprocess, "CREATE_NO_WINDOW") and not log_file_path:
+        creationflags = subprocess.CREATE_NO_WINDOW
+
+    if log_file_path:
+        log_path_bash = os.path.abspath(log_file_path).replace("\\", "/")
+        command = f"( trap '' INT; ({inner_cmd}) 2>&1 | tee '{log_path_bash}' ); exec bash"
+        stdout_target = None
+        stderr_target = None
+    else:
+        command = f"({inner_cmd}); exec bash" if is_windows else inner_cmd
+        stdout_target = subprocess.PIPE
+        stderr_target = subprocess.STDOUT
+
+    popen_kw = dict(
+        stdout=stdout_target,
+        stderr=stderr_target,
+        text=True if not log_file_path else None,
+        encoding="utf-8" if not log_file_path else None,
+        errors="replace" if not log_file_path else None,
+    )
+
+    if is_windows:
+        exe = (terminal_path or "").strip()
+        if not exe or not os.path.exists(exe):
+            raise FileNotFoundError("Terminal executable not found. Set it in Terminal → Set terminal path.")
+        if not log_file_path:
+            command = f"({inner_cmd}); exec bash"
+        return subprocess.Popen(
+            [exe, f"--cd={cwd}", "-c", command],
+            shell=False,
+            creationflags=creationflags,
+            **popen_kw,
+        )
+
+    return subprocess.Popen(
+        command,
+        shell=True,
+        executable="/bin/bash",
+        cwd=cwd,
+        **popen_kw,
+    )
+
+
 def _get_children_windows(pid: int) -> list[int]:
     """Returns PIDs of child processes of pid on Windows (PowerShell or wmic)."""
     creationflags = subprocess.CREATE_NO_WINDOW if hasattr(subprocess, "CREATE_NO_WINDOW") else 0

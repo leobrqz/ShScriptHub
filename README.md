@@ -94,7 +94,15 @@ A dedicated **Scheduler** page (via the Home | Scheduler selector) lets you run 
 - **Sub-row details** — Started and Finished timestamps on separate lines; for killed runs, shows "Previous instance terminated by scheduler".
 - **Manual kill detection** — When you manually kill a scheduled script, the history entry is updated to "killed" with the correct finished time.
 
-Schedules and run history are stored in `schedules.json` and `scheduler_history.json` in the app directory.
+**Terminal log visualization:**
+
+- Every scheduler run’s terminal output (stdout and stderr) is captured and stored, so you can review it later.
+- The History tab uses a **two-section layout**: the history list on top and a **Run log** viewer below.
+- **Click a history row** to load that run’s full terminal log in the viewer. If there is no log for that run, the viewer shows "No log recorded."
+- The log viewer is **read-only** and **scrollable**.
+- Logs are keyed by the same run id as in `scheduler_history.json` and persisted in `Scheduler/history_logs.json`; temporary capture files live in `Scheduler/logs/`.
+
+Schedules and run history are stored in the `Scheduler` folder: `Scheduler/schedules.json`, `Scheduler/scheduler_history.json`, `Scheduler/history_logs.json`. Run logs are written to `Scheduler/logs/`.
 
 ## How scripts are discovered
 

@@ -6,7 +6,7 @@ import os
 from datetime import datetime
 
 from PySide6.QtCore import Qt, QTimer
-from PySide6.QtGui import QIcon
+from PySide6.QtGui import QFont, QIcon
 from PySide6.QtWidgets import (
     QStyle,
     QButtonGroup,
@@ -20,10 +20,12 @@ from PySide6.QtWidgets import (
     QLabel,
     QLineEdit,
     QMessageBox,
+    QPlainTextEdit,
     QPushButton,
     QRadioButton,
     QScrollArea,
     QSizePolicy,
+    QSplitter,
     QSpinBox,
     QStackedWidget,
     QVBoxLayout,
@@ -39,7 +41,7 @@ from scheduler_data import (
     validate_schedule,
 )
 from scheduler_engine import format_next_run_countdown, format_rule_display
-from scheduler_storage import load_history, load_schedules, save_schedules
+from scheduler_storage import load_history, load_log, load_schedules, save_schedules
 import utils
 
 HISTORY_FILTER_OPTIONS = ("All", "started", "killed", "exited", "failed")
@@ -156,9 +158,15 @@ class SchedulerContentWidget(QWidget):
 
     def _build_history_view(self):
         view = QWidget()
-        layout = QVBoxLayout(view)
-        layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(8)
+        splitter = QSplitter(Qt.Orientation.Vertical)
+
+        self._selected_history_run_id = None
+        self._history_row_map = {}
+
+        list_widget = QWidget()
+        list_layout = QVBoxLayout(list_widget)
+        list_layout.setContentsMargins(0, 0, 0, 0)
+        list_layout.setSpacing(8)
 
         filter_row = QHBoxLayout()
         filter_row.addWidget(QLabel("Filter:"))
@@ -167,7 +175,7 @@ class SchedulerContentWidget(QWidget):
         self._history_filter.currentTextChanged.connect(lambda _: self.refresh_history())
         filter_row.addWidget(self._history_filter)
         filter_row.addStretch()
-        layout.addLayout(filter_row)
+        list_layout.addLayout(filter_row)
 
         self._history_scroll = QScrollArea()
         self._history_scroll.setFrameShape(QFrame.Shape.NoFrame)
@@ -183,14 +191,73 @@ class SchedulerContentWidget(QWidget):
 
         self._history_layout.addStretch()
         self._history_scroll.setWidget(self._history_container)
-        layout.addWidget(self._history_scroll, 1)
+        list_layout.addWidget(self._history_scroll, 1)
 
         self._history_empty = QLabel("No history entries.")
         self._history_empty.setObjectName("emptyStateLabel")
         self._history_empty.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        layout.addWidget(self._history_empty, 1)
+        list_layout.addWidget(self._history_empty, 1)
 
+        list_widget.setMinimumHeight(120)
+        splitter.addWidget(list_widget)
+
+        self._history_log_viewer_panel = QFrame()
+        self._history_log_viewer_panel.setObjectName("scriptViewer")
+        self._history_log_viewer_panel.setAttribute(Qt.WA_StyledBackground, True)
+        log_layout = QVBoxLayout(self._history_log_viewer_panel)
+        log_layout.setContentsMargins(12, 8, 12, 12)
+        log_layout.setSpacing(8)
+
+        log_header = QHBoxLayout()
+        log_title = QLabel("Run log")
+        log_title.setObjectName("detailSectionHeader")
+        log_header.addWidget(log_title)
+        log_header.addStretch()
+        close_btn = QPushButton("×")
+        close_btn.setObjectName("historyLogCloseBtn")
+        close_btn.setFixedSize(24, 22)
+        close_font = QFont()
+        close_font.setPointSize(10)
+        close_font.setWeight(QFont.Weight.DemiBold)
+        close_btn.setFont(close_font)
+        close_btn.setToolTip("Close log viewer")
+        close_btn.clicked.connect(self._on_close_log_viewer)
+        log_header.addWidget(close_btn)
+        log_layout.addLayout(log_header)
+
+        self._history_log_edit = QPlainTextEdit()
+        self._history_log_edit.setReadOnly(True)
+        self._history_log_edit.setLineWrapMode(QPlainTextEdit.LineWrapMode.NoWrap)
+        log_font = QFont("Consolas")
+        log_font.setStyleHint(QFont.StyleHint.Monospace)
+        log_font.setPointSize(9)
+        self._history_log_edit.setFont(log_font)
+        self._history_log_edit.setPlaceholderText("Select a history entry to view its log.")
+        log_layout.addWidget(self._history_log_edit, 1)
+
+        splitter.addWidget(self._history_log_viewer_panel)
+        splitter.setStretchFactor(0, 0)
+        splitter.setStretchFactor(1, 1)
+        splitter.setSizes([300, 320])
+
+        main_layout = QVBoxLayout(view)
+        main_layout.setContentsMargins(0, 0, 0, 0)
+        main_layout.addWidget(splitter)
         return view
+
+    def _on_close_log_viewer(self):
+        self._history_log_viewer_panel.setVisible(False)
+
+    def _on_history_row_clicked(self, run):
+        self._selected_history_run_id = run.get("id")
+        for rid, row_w in self._history_row_map.items():
+            row_w.setProperty("selected", rid == self._selected_history_run_id)
+            row_w.style().unpolish(row_w)
+            row_w.style().polish(row_w)
+        log_text = load_log(run["id"]) if run.get("id") else ""
+        self._history_log_edit.setPlaceholderText("")
+        self._history_log_edit.setPlainText(log_text if log_text else "No log recorded.")
+        self._history_log_viewer_panel.setVisible(True)
 
     # ------------------------------------------------------------------
     # Refresh
@@ -216,6 +283,7 @@ class SchedulerContentWidget(QWidget):
             self._schedules_layout.insertWidget(self._schedules_layout.count() - 1, row_w)
 
     def refresh_history(self):
+        self._history_row_map.clear()
         while self._history_layout.count() > 2:
             item = self._history_layout.takeAt(1)
             w = item.widget()
@@ -464,10 +532,24 @@ class SchedulerContentWidget(QWidget):
         elif status == "started" and started_str:
             sub_text = f"Started: {started_str}"
 
+        sub_lbl = None
         if sub_text:
             sub_lbl = QLabel(sub_text)
             sub_lbl.setObjectName("historySubLabel")
             grid.addWidget(sub_lbl, 1, 0, 1, 4)
+
+        run_id = run.get("id")
+        row.setProperty("selected", run_id == self._selected_history_run_id)
+        row.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._history_row_map[run_id] = row
+
+        def _on_click(event, r=dict(run)):
+            self._on_history_row_clicked(r)
+        row.mousePressEvent = _on_click
+        for w in (name_lbl, script_lbl, time_lbl, status_lbl):
+            w.mousePressEvent = _on_click
+        if sub_lbl is not None:
+            sub_lbl.mousePressEvent = _on_click
 
         return row
 
