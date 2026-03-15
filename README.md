@@ -22,12 +22,12 @@ A `.sh` script runner for anyone tired of hopping between folders and scripts. I
 
 Compact toolbar at the top of the window:
 
-- **Project** — Set project path | Refresh to rescan scripts
-- **Terminal** — Set Git Bash path
-- **Venv** — Set venv activate path for scripts that interact with Python | Clear venv path to revert to auto-detect
-- **Theme toggle** — Switch between dark and light themes (persisted across restarts)
+- **Project** - Set project path | Refresh to rescan scripts
+- **Terminal** - Set Git Bash path
+- **Venv** - Set venv activate path for scripts that interact with Python | Clear venv path to revert to auto-detect
+- **Theme toggle** - Switch between dark and light themes (persisted across restarts)
 
-- **Page selector** — Switch between **Home** (script detail panel) and **Scheduler** (schedules and run history). The sidebar remains visible in both views.
+- **Page selector** - Switch between **Home** (script detail panel) and **Scheduler** (schedules and run history). The sidebar remains visible in both views.
 
 All settings, per-script categories, and favorites are stored in `config.json` in the app directory.
 
@@ -35,36 +35,36 @@ All settings, per-script categories, and favorites are stored in `config.json` i
 
 Scripts are listed in a collapsible folder tree on the left panel:
 
-- **Favorites section** — Favorited scripts are pinned at the top.
-- **Project tree** — Scripts grouped by their first-level folder. Folders can be expanded or collapsed.
-- **Search** — Filters the tree by folder or file name as you type.
-- **Filter** — Dropdown to show All, Backend, Frontend, or Running scripts only.
-- **Running indicator** — A dot next to each script shows whether it is currently running.
-- **Selection** — Clicking a script loads its details in the detail panel.
+- **Favorites section** - Favorited scripts are pinned at the top.
+- **Project tree** - Scripts grouped by their first-level folder. Folders can be expanded or collapsed.
+- **Search** - Filters the tree by folder or file name as you type.
+- **Filter** - Dropdown to show All, Backend, Frontend, or Running scripts only.
+- **Running indicator** - A dot next to each script shows whether it is currently running.
+- **Selection** - Clicking a script loads its details in the detail panel.
 
 ### Detail panel
 
 The right panel shows the selected script's full information and controls:
 
-- **Name and path** — Script name and relative path from project root.
-- **Category** — Per-script category selector (None, backend, frontend). Defaults are inferred from folder name.
-- **Env** — Detected environment for the script (`.venv`, `venv`, `node_modules`, or configured venv path).
-- **Status** — Idle, Running, or Stopped.
-- **Favorite** — Star button to pin or unpin the script.
-- **Run** — Opens the configured terminal with CWD set to the script's folder.
-- **Kill** — Stops only the process tree launched by the app for that script.
+- **Name and path** - Script name and relative path from project root.
+- **Category** - Per-script category selector (None, backend, frontend). Defaults are inferred from folder name.
+- **Env** - Detected environment for the script (`.venv`, `venv`, `node_modules`, or configured venv path).
+- **Status** - Idle, Running, or Stopped.
+- **Favorite** - Star button to pin or unpin the script.
+- **Run** - Opens the configured terminal with CWD set to the script's folder.
+- **Kill** - Stops only the process tree launched by the app for that script.
 
 ### Live metrics
 
 When a script is running, the detail panel shows these metrics updated every second:
 
-- **CPU %** — Current CPU usage.
-- **RAM (RSS)** — Resident memory in use (MB).
-- **RAM %** — Share of system RAM.
-- **Elapsed** — Time since the script started.
-- **Peak memory** — Maximum RSS reached (MB).
-- **CPU time** — Total CPU time consumed.
-- **Threads** — Number of threads.
+- **CPU %** - Current CPU usage.
+- **RAM (RSS)** - Resident memory in use (MB).
+- **RAM %** - Share of system RAM.
+- **Elapsed** - Time since the script started.
+- **Peak memory** - Maximum RSS reached (MB).
+- **CPU time** - Total CPU time consumed.
+- **Threads** - Number of threads.
 
 ### Script viewer
 
@@ -81,24 +81,24 @@ A dedicated **Scheduler** page (via the Home | Scheduler selector) lets you run 
 
 **Schedules view:**
 
-- **New Schedule** — Create time-based (specific hour:minute) or interval-based (every N minutes/hours) schedules.
+- **New Schedule** - Create time-based (specific hour:minute) or interval-based (every N minutes/hours) schedules.
 - **Filters**
-  - **Schedule name** — Free-text field with autocomplete: type to filter the list of schedule names; the dropdown suggests existing schedule names and narrows as you type.
-  - **Script** — Dropdown of project scripts to show only schedules that run that script.
+  - **Schedule name** - Free-text field with autocomplete: type to filter the list of schedule names; the dropdown suggests existing schedule names and narrows as you type.
+  - **Script** - Dropdown of project scripts to show only schedules that run that script.
 - **Table columns** - Name, Script, Rule, Next Run, Status, Enabled toggle, Delete.
-- **Live countdown** — When a schedule is enabled, the Next Run column updates every second. When disabled, shows "Disabled".
-- **Interval reset on enable** — Toggling a disabled interval schedule back ON resets the countdown from the full interval.
-- **Row actions** — Click a row to edit; use the toggle to enable/disable; use the trash icon to delete.
+- **Live countdown** - When a schedule is enabled, the Next Run column updates every second. When disabled, shows "Disabled".
+- **Interval reset on enable** - Toggling a disabled interval schedule back ON resets the countdown from the full interval.
+- **Row actions** - Click a row to edit; use the toggle to enable/disable; use the trash icon to delete.
 
 **History view:**
 
 - **Filters**
-  - **Schedule name** — Free-text field with autocomplete: type to filter by schedule name; the dropdown lists schedule names that appear in history and filters as you type;
-  - **Script** — Dropdown of scripts that appear in history to show only runs for that script.
-  - **Status** — All, started, killed, exited, failed.
-- **Columns** — Schedule name, Script path, Time, Status.
-- **Sub-row details** — Started and Finished timestamps on separate lines; for killed runs, shows "Previous instance terminated by scheduler".
-- **Manual kill detection** — When you manually kill a scheduled script, the history entry is updated to "killed" with the correct finished time.
+  - **Schedule name** - Free-text field with autocomplete: type to filter by schedule name; the dropdown lists schedule names that appear in history and filters as you type;
+  - **Script** - Dropdown of scripts that appear in history to show only runs for that script.
+  - **Status** - All, started, killed, exited, failed.
+- **Columns** - Schedule name, Script path, Time, Status.
+- **Sub-row details** - Started and Finished timestamps on separate lines; for killed runs, shows "Previous instance terminated by scheduler".
+- **Manual kill detection** - When you manually kill a scheduled script, the history entry is updated to "killed" with the correct finished time.
 
 **Terminal log visualization:**
 
