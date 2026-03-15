@@ -5,10 +5,12 @@ Separated from gui.py to keep modules focused.
 import os
 from datetime import datetime
 
-from PySide6.QtCore import Qt, QTimer
+from PySide6.QtCore import Qt, QTimer, QStringListModel
 from PySide6.QtGui import QFont, QIcon
 from PySide6.QtWidgets import (
+    QCompleter,
     QStyle,
+    QAbstractSpinBox,
     QButtonGroup,
     QCheckBox,
     QComboBox,
@@ -40,6 +42,7 @@ from scheduler_data import (
     now_iso,
     validate_schedule,
 )
+from highlighter import ShellHighlighter
 from scheduler_engine import format_next_run_countdown, format_rule_display
 from scheduler_storage import load_history, load_log, load_schedules, save_schedules
 import utils
@@ -133,6 +136,24 @@ class SchedulerContentWidget(QWidget):
         top_row.addStretch()
         layout.addLayout(top_row)
 
+        schedules_filter_row = QHBoxLayout()
+        schedules_filter_row.setSpacing(8)
+        schedules_filter_row.addWidget(QLabel("Schedule name:"))
+        self._schedules_schedule_name_edit = QLineEdit()
+        self._schedules_schedule_name_edit.setPlaceholderText("Filter by schedule name...")
+        self._schedules_schedule_name_completer = QCompleter()
+        self._schedules_schedule_name_completer.setCaseSensitivity(Qt.CaseSensitivity.CaseInsensitive)
+        self._schedules_schedule_name_completer.setFilterMode(Qt.MatchFlag.MatchContains)
+        self._schedules_schedule_name_edit.setCompleter(self._schedules_schedule_name_completer)
+        self._schedules_schedule_name_edit.textChanged.connect(lambda _: self.refresh_schedules())
+        schedules_filter_row.addWidget(self._schedules_schedule_name_edit, 1)
+        schedules_filter_row.addWidget(QLabel("Script:"))
+        self._schedules_script_combo = QComboBox()
+        self._schedules_script_combo.setMinimumWidth(180)
+        self._schedules_script_combo.currentTextChanged.connect(lambda _: self.refresh_schedules())
+        schedules_filter_row.addWidget(self._schedules_script_combo, 1)
+        layout.addLayout(schedules_filter_row)
+
         self._schedules_scroll = QScrollArea()
         self._schedules_scroll.setFrameShape(QFrame.Shape.NoFrame)
         self._schedules_scroll.setWidgetResizable(True)
@@ -169,7 +190,22 @@ class SchedulerContentWidget(QWidget):
         list_layout.setSpacing(8)
 
         filter_row = QHBoxLayout()
-        filter_row.addWidget(QLabel("Filter:"))
+        filter_row.setSpacing(8)
+        filter_row.addWidget(QLabel("Schedule name:"))
+        self._history_schedule_name_edit = QLineEdit()
+        self._history_schedule_name_edit.setPlaceholderText("Filter by schedule name...")
+        self._history_schedule_name_completer = QCompleter()
+        self._history_schedule_name_completer.setCaseSensitivity(Qt.CaseSensitivity.CaseInsensitive)
+        self._history_schedule_name_completer.setFilterMode(Qt.MatchFlag.MatchContains)
+        self._history_schedule_name_edit.setCompleter(self._history_schedule_name_completer)
+        self._history_schedule_name_edit.textChanged.connect(lambda _: self.refresh_history())
+        filter_row.addWidget(self._history_schedule_name_edit, 1)
+        filter_row.addWidget(QLabel("Script:"))
+        self._history_script_combo = QComboBox()
+        self._history_script_combo.setMinimumWidth(180)
+        self._history_script_combo.currentTextChanged.connect(lambda _: self.refresh_history())
+        filter_row.addWidget(self._history_script_combo, 1)
+        filter_row.addWidget(QLabel("Status:"))
         self._history_filter = QComboBox()
         self._history_filter.addItems(HISTORY_FILTER_OPTIONS)
         self._history_filter.currentTextChanged.connect(lambda _: self.refresh_history())
@@ -233,6 +269,9 @@ class SchedulerContentWidget(QWidget):
         log_font.setPointSize(9)
         self._history_log_edit.setFont(log_font)
         self._history_log_edit.setPlaceholderText("Select a history entry to view its log.")
+        self._history_log_highlighter = ShellHighlighter(
+            self._history_log_edit.document(), self._palette
+        )
         log_layout.addWidget(self._history_log_edit, 1)
 
         splitter.addWidget(self._history_log_viewer_panel)
@@ -247,6 +286,10 @@ class SchedulerContentWidget(QWidget):
 
     def _on_close_log_viewer(self):
         self._history_log_viewer_panel.setVisible(False)
+
+    def update_log_highlighter_palette(self, palette: dict) -> None:
+        if hasattr(self, "_history_log_highlighter"):
+            self._history_log_highlighter.update_palette(palette)
 
     def _on_history_row_clicked(self, run):
         self._selected_history_run_id = run.get("id")
@@ -274,6 +317,41 @@ class SchedulerContentWidget(QWidget):
                 w.setParent(None)
 
         schedules = load_schedules()
+        distinct_schedule_names = sorted({s.get("name", "") or "" for s in schedules if s.get("name")})
+        self._schedules_schedule_name_completer.setModel(QStringListModel(distinct_schedule_names))
+
+        scripts = self._main.scripts if self._main.scripts else []
+        script_rel_paths = []
+        if scripts and self._main.project_path:
+            for s in sorted(scripts, key=lambda x: x["path"].lower()):
+                try:
+                    rel = os.path.relpath(s["path"], self._main.project_path).replace("\\", "/")
+                    script_rel_paths.append(rel)
+                except ValueError:
+                    script_rel_paths.append(s.get("name", os.path.basename(s["path"])))
+        prev_script = self._schedules_script_combo.currentText()
+        self._schedules_script_combo.blockSignals(True)
+        self._schedules_script_combo.clear()
+        self._schedules_script_combo.addItem("All scripts")
+        self._schedules_script_combo.addItems(script_rel_paths)
+        if prev_script and prev_script in ["All scripts"] + script_rel_paths:
+            self._schedules_script_combo.setCurrentText(prev_script)
+        self._schedules_script_combo.blockSignals(False)
+
+        schedule_name_filter = self._schedules_schedule_name_edit.text().strip().lower()
+        script_combo_text = self._schedules_script_combo.currentText().strip()
+        if schedule_name_filter or (script_combo_text and script_combo_text != "All scripts"):
+            filtered = []
+            for s in schedules:
+                if schedule_name_filter and schedule_name_filter not in (s.get("name", "") or "").lower():
+                    continue
+                if script_combo_text and script_combo_text != "All scripts":
+                    rel = self._relative_script_path(s.get("script_path", ""))
+                    if rel != script_combo_text:
+                        continue
+                filtered.append(s)
+            schedules = filtered
+
         has_rows = bool(schedules)
         self._schedules_scroll.setVisible(has_rows)
         self._schedules_empty.setVisible(not has_rows)
@@ -292,9 +370,49 @@ class SchedulerContentWidget(QWidget):
                 w.setParent(None)
 
         runs = load_history()
+        distinct_schedule_names = sorted({r.get("schedule_name", "") or "—" for r in runs if r.get("schedule_name")})
+        distinct_script_rel = []
+        if self._main.project_path:
+            seen = set()
+            for r in runs:
+                path = r.get("script_path", "")
+                if not path or path in seen:
+                    continue
+                seen.add(path)
+                try:
+                    rel = os.path.relpath(path, self._main.project_path).replace("\\", "/")
+                    distinct_script_rel.append(rel)
+                except ValueError:
+                    distinct_script_rel.append(os.path.basename(path))
+        distinct_script_rel.sort(key=str.lower)
+
+        self._history_schedule_name_completer.setModel(QStringListModel(distinct_schedule_names))
+        prev_script = self._history_script_combo.currentText()
+        self._history_script_combo.blockSignals(True)
+        self._history_script_combo.clear()
+        self._history_script_combo.addItem("All scripts")
+        self._history_script_combo.addItems(distinct_script_rel)
+        if prev_script and prev_script in ["All scripts"] + distinct_script_rel:
+            self._history_script_combo.setCurrentText(prev_script)
+        self._history_script_combo.blockSignals(False)
+
         filter_status = self._history_filter.currentText()
         if filter_status != "All":
             runs = [r for r in runs if r.get("status") == filter_status]
+        schedule_name_filter = self._history_schedule_name_edit.text().strip().lower()
+        if schedule_name_filter:
+            runs = [r for r in runs if schedule_name_filter in ((r.get("schedule_name", "") or "").lower())]
+        script_combo_text = self._history_script_combo.currentText().strip()
+        if script_combo_text and script_combo_text != "All scripts":
+            def _run_script_rel(run):
+                p = run.get("script_path", "")
+                if not p or not self._main.project_path:
+                    return os.path.basename(p)
+                try:
+                    return os.path.relpath(p, self._main.project_path).replace("\\", "/")
+                except ValueError:
+                    return os.path.basename(p)
+            runs = [r for r in runs if _run_script_rel(r) == script_combo_text]
 
         runs.sort(key=lambda r: r.get("triggered_at", ""), reverse=True)
 
@@ -482,13 +600,24 @@ class SchedulerContentWidget(QWidget):
         script_lbl = QLabel(rel)
         grid.addWidget(script_lbl, 0, 1)
 
-        triggered = run.get("triggered_at", "")
-        try:
-            dt = datetime.fromisoformat(triggered)
-            time_str = dt.strftime("%Y-%m-%d %H:%M")
-        except (ValueError, TypeError):
-            time_str = triggered[:16] if triggered else "—"
-        time_lbl = QLabel(time_str)
+        def _fmt_ts(s):
+            if not s:
+                return None
+            try:
+                dt = datetime.fromisoformat(s)
+                return dt.strftime("%Y-%m-%d %H:%M:%S")
+            except (ValueError, TypeError):
+                return s[:19] if s else None
+
+        started_str = _fmt_ts(run.get("started_at"))
+        finished_str = _fmt_ts(run.get("finished_at"))
+        time_parts = []
+        if started_str:
+            time_parts.append(f"Started: {started_str}")
+        if finished_str:
+            time_parts.append(f"Finished: {finished_str}")
+        time_column_text = "\n".join(time_parts) if time_parts else "—"
+        time_lbl = QLabel(time_column_text)
         grid.addWidget(time_lbl, 0, 2)
 
         status = run.get("status", "—")
@@ -498,39 +627,11 @@ class SchedulerContentWidget(QWidget):
         status_lbl.setProperty("status_type", status)
         grid.addWidget(status_lbl, 0, 3)
 
-        def _fmt_started(s):
-            if not s:
-                return None
-            try:
-                dt = datetime.fromisoformat(s)
-                return dt.strftime("%Y-%m-%d %H:%M:%S")
-            except (ValueError, TypeError):
-                return s[:19] if s else None
-
         sub_text = None
-        started_str = _fmt_started(run.get("started_at"))
         if status == "failed":
             sub_text = run.get("error_message", "Unknown error")
-            if started_str:
-                sub_text = f"Started: {started_str}\n{sub_text}"
-        elif status == "exited":
-            parts = []
-            if started_str:
-                parts.append(f"Started: {started_str}")
-            finished = run.get("finished_at", "")
-            if finished:
-                try:
-                    dt = datetime.fromisoformat(finished)
-                    parts.append(f"Finished: {dt.strftime('%Y-%m-%d %H:%M:%S')}")
-                except (ValueError, TypeError):
-                    parts.append(f"Finished: {finished}")
-            sub_text = "\n".join(parts) if parts else None
         elif status == "killed":
             sub_text = "Previous instance terminated by scheduler"
-            if started_str:
-                sub_text = f"Started: {started_str}\n{sub_text}"
-        elif status == "started" and started_str:
-            sub_text = f"Started: {started_str}"
 
         sub_lbl = None
         if sub_text:
@@ -643,6 +744,60 @@ class SchedulerContentWidget(QWidget):
         return os.path.basename(script_path)
 
 
+SPINBOX_ARROW_BTN_WIDTH = 24
+SPINBOX_ARROW_BTN_HEIGHT = 14
+SPINBOX_ARROWS_CONTAINER_HEIGHT = 32
+
+
+class SpinBoxWithButtons(QWidget):
+    """QSpinBox with no built-in arrows and explicit up/down buttons that work reliably."""
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        layout = QHBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(3)
+        self._spin = QSpinBox()
+        self._spin.setButtonSymbols(QAbstractSpinBox.ButtonSymbols.NoButtons)
+        layout.addWidget(self._spin)
+        btn_container = QFrame()
+        btn_container.setObjectName("spinboxArrowsContainer")
+        btn_container.setFixedSize(
+            SPINBOX_ARROW_BTN_WIDTH + 4,
+            SPINBOX_ARROWS_CONTAINER_HEIGHT,
+        )
+        btn_layout = QVBoxLayout(btn_container)
+        btn_layout.setContentsMargins(2, 2, 2, 2)
+        btn_layout.setSpacing(0)
+        up_btn = QPushButton("\u25b2")
+        up_btn.setObjectName("spinboxArrowBtn")
+        up_btn.setFixedSize(SPINBOX_ARROW_BTN_WIDTH, SPINBOX_ARROW_BTN_HEIGHT)
+        up_btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        up_btn.clicked.connect(self._spin.stepUp)
+        down_btn = QPushButton("\u25bc")
+        down_btn.setObjectName("spinboxArrowBtn")
+        down_btn.setFixedSize(SPINBOX_ARROW_BTN_WIDTH, SPINBOX_ARROW_BTN_HEIGHT)
+        down_btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        down_btn.clicked.connect(self._spin.stepDown)
+        btn_layout.addWidget(up_btn)
+        btn_layout.addWidget(down_btn)
+        layout.addWidget(btn_container, 0, Qt.AlignmentFlag.AlignVCenter)
+
+        self.valueChanged = self._spin.valueChanged
+
+    def value(self):
+        return self._spin.value()
+
+    def setValue(self, v):
+        self._spin.setValue(v)
+
+    def setRange(self, low, high):
+        self._spin.setRange(low, high)
+
+    def setSpecialValueText(self, text):
+        self._spin.setSpecialValueText(text)
+
+
 class ScheduleDialog(QDialog):
     """Dialog for creating or editing a schedule."""
 
@@ -664,15 +819,26 @@ class ScheduleDialog(QDialog):
     def _build_form(self):
         layout = QVBoxLayout(self)
         layout.setSpacing(12)
-        layout.setContentsMargins(20, 16, 20, 16)
+        layout.setContentsMargins(20, 8, 20, 16)
 
-        layout.addWidget(QLabel("Name"))
+        top_form = QWidget()
+        top_form.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Maximum)
+        top_layout = QVBoxLayout(top_form)
+        top_layout.setContentsMargins(0, 0, 0, 0)
+        top_layout.setSpacing(12)
+
+        name_block = QVBoxLayout()
+        name_block.setSpacing(4)
+        name_block.addWidget(QLabel("Name"))
         self._name_edit = QLineEdit()
         self._name_edit.setMaxLength(MAX_NAME_LENGTH)
         self._name_edit.setPlaceholderText("Schedule name")
-        layout.addWidget(self._name_edit)
+        name_block.addWidget(self._name_edit)
+        top_layout.addLayout(name_block)
 
-        layout.addWidget(QLabel("Script"))
+        script_block = QVBoxLayout()
+        script_block.setSpacing(4)
+        script_block.addWidget(QLabel("Script"))
         script_row = QHBoxLayout()
         self._script_combo = QComboBox()
         self._script_combo.setEditable(False)
@@ -688,40 +854,47 @@ class ScheduleDialog(QDialog):
         browse_btn = QPushButton("Browse")
         browse_btn.clicked.connect(self._on_browse)
         script_row.addWidget(browse_btn)
-        layout.addLayout(script_row)
+        script_block.addLayout(script_row)
+        top_layout.addLayout(script_block)
 
-        layout.addWidget(QLabel("Rule Type"))
+        rule_type_block = QVBoxLayout()
+        rule_type_block.setSpacing(4)
+        rule_type_block.addWidget(QLabel("Rule Type"))
         self._time_radio = QRadioButton("Time-based (specific hour:minute)")
         self._interval_radio = QRadioButton("Interval-based (every N minutes/hours)")
         self._rule_type_group = QButtonGroup(self)
         self._rule_type_group.addButton(self._time_radio, 0)
         self._rule_type_group.addButton(self._interval_radio, 1)
         self._time_radio.setChecked(True)
-        layout.addWidget(self._time_radio)
-        layout.addWidget(self._interval_radio)
+        rule_type_block.addWidget(self._time_radio)
+        rule_type_block.addWidget(self._interval_radio)
+        top_layout.addLayout(rule_type_block)
+
+        layout.addWidget(top_form)
 
         # Time rule section
         self._time_section = QWidget()
+        self._time_section.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Maximum)
         time_layout = QVBoxLayout(self._time_section)
         time_layout.setContentsMargins(0, 4, 0, 4)
         time_layout.setSpacing(8)
 
         hm_row = QHBoxLayout()
         hm_row.addWidget(QLabel("Hour"))
-        self._hour_spin = QSpinBox()
+        self._hour_spin = SpinBoxWithButtons()
         self._hour_spin.setRange(0, 23)
         self._hour_spin.setValue(9)
         hm_row.addWidget(self._hour_spin)
         hm_row.addSpacing(16)
         hm_row.addWidget(QLabel("Minute"))
-        self._minute_spin = QSpinBox()
+        self._minute_spin = SpinBoxWithButtons()
         self._minute_spin.setRange(0, 59)
         self._minute_spin.setValue(0)
         hm_row.addWidget(self._minute_spin)
         hm_row.addStretch()
         time_layout.addLayout(hm_row)
 
-        time_layout.addWidget(QLabel("Days (optional — leave all unchecked = every day)"))
+        time_layout.addWidget(QLabel("Days (optional: leave all unchecked = every day)"))
         days_row = QHBoxLayout()
         self._day_checks: list[QCheckBox] = []
         for name in DAY_NAMES:
@@ -734,20 +907,26 @@ class ScheduleDialog(QDialog):
 
         # Interval rule section
         self._interval_section = QWidget()
+        self._interval_section.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Maximum)
         interval_layout = QVBoxLayout(self._interval_section)
         interval_layout.setContentsMargins(0, 4, 0, 4)
         interval_layout.setSpacing(8)
 
         interval_row = QHBoxLayout()
         interval_row.addWidget(QLabel("Run every"))
-        self._interval_value_spin = QSpinBox()
-        self._interval_value_spin.setRange(1, 9999)
-        self._interval_value_spin.setValue(5)
-        interval_row.addWidget(self._interval_value_spin)
-        self._interval_unit_combo = QComboBox()
-        self._interval_unit_combo.addItems(["minutes", "hours"])
-        self._interval_unit_combo.currentTextChanged.connect(self._on_interval_unit_changed)
-        interval_row.addWidget(self._interval_unit_combo)
+        self._interval_hours_spin = SpinBoxWithButtons()
+        self._interval_hours_spin.setRange(0, MAX_INTERVAL_HOURS)
+        self._interval_hours_spin.setValue(0)
+        self._interval_hours_spin.setSpecialValueText("0")
+        interval_row.addWidget(self._interval_hours_spin)
+        interval_row.addWidget(QLabel("hours"))
+        interval_row.addSpacing(16)
+        self._interval_minutes_spin = SpinBoxWithButtons()
+        self._interval_minutes_spin.setRange(0, 9999)
+        self._interval_minutes_spin.setValue(5)
+        self._interval_minutes_spin.setSpecialValueText("0")
+        interval_row.addWidget(self._interval_minutes_spin)
+        interval_row.addWidget(QLabel("minutes"))
         interval_row.addStretch()
         interval_layout.addLayout(interval_row)
         layout.addWidget(self._interval_section)
@@ -784,14 +963,6 @@ class ScheduleDialog(QDialog):
         is_time = self._time_radio.isChecked()
         self._time_section.setVisible(is_time)
         self._interval_section.setVisible(not is_time)
-
-    def _on_interval_unit_changed(self, unit):
-        if unit == "hours":
-            self._interval_value_spin.setMaximum(MAX_INTERVAL_HOURS)
-            if self._interval_value_spin.value() > MAX_INTERVAL_HOURS:
-                self._interval_value_spin.setValue(MAX_INTERVAL_HOURS)
-        else:
-            self._interval_value_spin.setMaximum(9999)
 
     def _on_browse(self):
         path, _ = QFileDialog.getOpenFileName(
@@ -853,11 +1024,16 @@ class ScheduleDialog(QDialog):
                     if 0 <= d <= 6:
                         self._day_checks[d].setChecked(True)
         elif rule_type == "interval":
-            self._interval_value_spin.setValue(rule.get("value", 5))
-            unit = rule.get("unit", "minutes")
-            idx = self._interval_unit_combo.findText(unit)
-            if idx >= 0:
-                self._interval_unit_combo.setCurrentIndex(idx)
+            if "hours" in rule or "minutes" in rule:
+                self._interval_hours_spin.setValue(rule.get("hours", 0))
+                self._interval_minutes_spin.setValue(rule.get("minutes", 5))
+            else:
+                if rule.get("unit") == "hours":
+                    self._interval_hours_spin.setValue(rule.get("value", 0))
+                    self._interval_minutes_spin.setValue(0)
+                else:
+                    self._interval_minutes_spin.setValue(rule.get("value", 5))
+                    self._interval_hours_spin.setValue(0)
 
         self._enabled_check.setChecked(s.get("enabled", True))
 
@@ -896,8 +1072,8 @@ class ScheduleDialog(QDialog):
                 rule["days"] = days
         else:
             rule = {
-                "value": self._interval_value_spin.value(),
-                "unit": self._interval_unit_combo.currentText(),
+                "hours": self._interval_hours_spin.value(),
+                "minutes": self._interval_minutes_spin.value(),
             }
 
         return {

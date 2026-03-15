@@ -82,14 +82,20 @@ A dedicated **Scheduler** page (via the Home | Scheduler selector) lets you run 
 **Schedules view:**
 
 - **New Schedule** — Create time-based (specific hour:minute) or interval-based (every N minutes/hours) schedules.
-- **Table columns** — Name, Script, Rule, Next Run, Status, Enabled toggle, Delete.
+- **Filters**
+  - **Schedule name** — Free-text field with autocomplete: type to filter the list of schedule names; the dropdown suggests existing schedule names and narrows as you type.
+  - **Script** — Dropdown of project scripts to show only schedules that run that script.
+- **Table columns** - Name, Script, Rule, Next Run, Status, Enabled toggle, Delete.
 - **Live countdown** — When a schedule is enabled, the Next Run column updates every second. When disabled, shows "Disabled".
 - **Interval reset on enable** — Toggling a disabled interval schedule back ON resets the countdown from the full interval.
 - **Row actions** — Click a row to edit; use the toggle to enable/disable; use the trash icon to delete.
 
 **History view:**
 
-- **Filter** — All, started, killed, exited, failed.
+- **Filters**
+  - **Schedule name** — Free-text field with autocomplete: type to filter by schedule name; the dropdown lists schedule names that appear in history and filters as you type;
+  - **Script** — Dropdown of scripts that appear in history to show only runs for that script.
+  - **Status** — All, started, killed, exited, failed.
 - **Columns** — Schedule name, Script path, Time, Status.
 - **Sub-row details** — Started and Finished timestamps on separate lines; for killed runs, shows "Previous instance terminated by scheduler".
 - **Manual kill detection** — When you manually kill a scheduled script, the history entry is updated to "killed" with the correct finished time.

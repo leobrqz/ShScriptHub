@@ -125,6 +125,32 @@ QComboBox QAbstractItemView {{
     color: {p["text_primary"]};
     selection-background-color: {p["menu_item_hover"]};
 }}
+QAbstractItemView {{
+    background-color: {p["menu_bg"]};
+    border: 1px solid {p["border"]};
+    color: {p["text_primary"]};
+    selection-background-color: {p["menu_item_hover"]};
+}}
+QFrame#spinboxArrowsContainer {{
+    background-color: {p["input_bg"]};
+    border: 1px solid {p["border"]};
+    border-radius: 4px;
+}}
+QPushButton#spinboxArrowBtn {{
+    background-color: {p["input_bg"]};
+    color: {p["text_primary"]};
+    border: none;
+    border-radius: 2px;
+    font-size: 7pt;
+    min-width: 0;
+    padding: 0;
+}}
+QPushButton#spinboxArrowBtn:hover {{
+    background-color: {p["menu_item_hover"]};
+}}
+QPushButton#spinboxArrowBtn:pressed {{
+    background-color: {p["border"]};
+}}
 QCheckBox, QRadioButton {{
     color: {p["text_primary"]};
 }}
