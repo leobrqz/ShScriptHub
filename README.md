@@ -30,7 +30,16 @@ A `.sh` script runner for anyone tired of hopping between folders and scripts. I
 
 </details>
 
+
 ## Features
+- [Toolbar and navigation](#toolbar-and-navigation)
+- [Sidebar](#sidebar)
+- [Detail panel](#detail-panel)
+- [Live metrics](#live-metrics)
+- [Script viewer](#script-viewer)
+- [Scheduler](#scheduler)
+- [System notifications](#system-notifications)
+
 
 ### Toolbar and navigation
 
