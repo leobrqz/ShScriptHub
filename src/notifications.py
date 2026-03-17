@@ -4,9 +4,27 @@ import os
 from collections import deque
 from typing import Any, Deque, Dict, Optional
 
-from PySide6.QtCore import Qt, QTimer
-from PySide6.QtGui import QGuiApplication
-from PySide6.QtWidgets import QApplication, QHBoxLayout, QLabel, QPushButton, QVBoxLayout, QWidget
+from PySide6.QtCore import QEvent, QObject, QSize, Qt, QTimer
+from PySide6.QtGui import QCursor, QColor, QGuiApplication, QIcon, QPainter, QPixmap
+from PySide6.QtWidgets import QApplication, QHBoxLayout, QLabel, QPushButton, QToolTip, QVBoxLayout, QWidget
+
+CLOSE_ICON_SIZE = 10
+CLOSE_BTN_SIZE = 18
+
+
+def _make_close_icon(color_hex: str, size: int = CLOSE_ICON_SIZE) -> QIcon:
+    pixmap = QPixmap(size, size)
+    pixmap.fill(Qt.transparent)
+    painter = QPainter(pixmap)
+    painter.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform)
+    painter.setPen(QColor(color_hex))
+    painter.setBrush(Qt.NoBrush)
+    w, h = size, size
+    margin = 1 if size <= 12 else 2
+    painter.drawLine(margin, margin, w - margin, h - margin)
+    painter.drawLine(w - margin, margin, margin, h - margin)
+    painter.end()
+    return QIcon(pixmap)
 
 NOTIFICATION_DURATION_MS = 4000
 
@@ -19,6 +37,28 @@ EVENT_ERROR = "error"
 _queue: Deque[Dict[str, Any]] = deque()
 _current_toast: Optional["_NotificationToast"] = None
 _current_palette: Optional[dict] = None
+
+
+CLOSE_BTN_TOOLTIP = "Close notification"
+
+
+class _CloseButtonHoverFilter(QObject):
+    def __init__(self, button: QPushButton, icon_normal: QIcon, icon_hover: QIcon):
+        super().__init__(button)
+        self._button = button
+        self._icon_normal = icon_normal
+        self._icon_hover = icon_hover
+
+    def eventFilter(self, obj: QObject, event: QEvent) -> bool:
+        if obj is self._button:
+            if event.type() == QEvent.Type.Enter:
+                self._button.setIcon(self._icon_hover)
+                pos = QCursor.pos()
+                QToolTip.showText(pos, CLOSE_BTN_TOOLTIP, self._button)
+            elif event.type() == QEvent.Type.Leave:
+                self._button.setIcon(self._icon_normal)
+                QToolTip.hideText()
+        return super().eventFilter(obj, event)
 
 
 class _NotificationToast(QWidget):
@@ -38,23 +78,30 @@ class _NotificationToast(QWidget):
 
     def _build_ui(self) -> None:
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(12, 10, 12, 10)
+        layout.setContentsMargins(14, 12, 8, 12)
         layout.setSpacing(6)
 
         header_row = QHBoxLayout()
         header_row.setContentsMargins(0, 0, 0, 0)
-        header_row.setSpacing(6)
+        header_row.setSpacing(8)
 
         self._title_label = QLabel(self._build_title())
         self._title_label.setObjectName("notificationTitle")
         header_row.addWidget(self._title_label)
         header_row.addStretch()
 
-        close_btn = QPushButton("×")
+        close_btn = QPushButton()
         close_btn.setObjectName("notificationCloseBtn")
-        close_btn.setFixedSize(18, 18)
+        close_btn.setFixedSize(CLOSE_BTN_SIZE, CLOSE_BTN_SIZE)
+        icon_red = _make_close_icon(self._palette.get("kill_btn_bg", "#b91c1c"))
+        icon_white = _make_close_icon(self._palette.get("btn_text", "#ffffff"))
+        close_btn.setIcon(icon_red)
+        close_btn.setIconSize(QSize(CLOSE_ICON_SIZE, CLOSE_ICON_SIZE))
+        close_btn.setToolTip(CLOSE_BTN_TOOLTIP)
+        close_btn.setCursor(Qt.PointingHandCursor)
         close_btn.clicked.connect(self._handle_close_clicked)
-        header_row.addWidget(close_btn)
+        close_btn.installEventFilter(_CloseButtonHoverFilter(close_btn, icon_red, icon_white))
+        header_row.addWidget(close_btn, 0, Qt.AlignRight | Qt.AlignTop)
 
         layout.addLayout(header_row)
 

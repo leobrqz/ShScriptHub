@@ -535,11 +535,24 @@ QLabel#notificationError {{
 }}
 QPushButton#notificationCloseBtn {{
     background-color: transparent;
-    border: none;
-    color: {p["text_muted"]};
+    border: 1px solid {p["kill_btn_bg"]};
+    border-radius: 3px;
+    color: {p["kill_btn_bg"]};
+    font-size: 13px;
+    font-weight: 700;
+    min-width: 18px;
+    min-height: 18px;
+    max-width: 18px;
+    max-height: 18px;
     padding: 0;
 }}
 QPushButton#notificationCloseBtn:hover {{
-    color: {p["text_primary"]};
+    background-color: {p["kill_btn_bg"]};
+    color: {p["btn_text"]};
+}}
+QPushButton#notificationCloseBtn:pressed {{
+    background-color: {p["kill_btn_pressed"]};
+    border-color: {p["kill_btn_pressed"]};
+    color: {p["btn_text"]};
 }}
 """

@@ -52,7 +52,7 @@ from theme import DARK_PALETTE, LIGHT_PALETTE, get_stylesheet
 from utils import get_process_tree_after_spawn, kill_script_process, run_script_in_gitbash, run_script_in_gitbash_captured
 
 from scheduler_data import create_history_entry, now_iso
-from scheduler_engine import get_due_schedules, get_next_run, validate_trigger
+from scheduler_engine import format_rule_display, get_due_schedules, get_next_run, validate_trigger
 from scheduler_storage import (
     append_history_entry,
     append_log,
@@ -237,7 +237,9 @@ class ShScriptHubApp(QMainWindow):
         if schedule.get("rule_type") == "time":
             return next_run.strftime("%H:%M %d/%m/%y")
         if total_seconds <= 0:
-            return "in 0m"
+            return "in 0s"
+        if total_seconds < 60:
+            return f"in {total_seconds}s"
         hours = total_seconds // 3600
         minutes = (total_seconds % 3600) // 60
         if hours and minutes:
@@ -256,7 +258,7 @@ class ShScriptHubApp(QMainWindow):
         script_path = schedule.get("script_path") or ""
         if script_name is None:
             script_name = os.path.basename(script_path) if script_path else "—"
-        rule_type = "Time" if schedule.get("rule_type") == "time" else "Interval"
+        rule_type = format_rule_display(schedule)
         next_run_text = self._format_next_run_for_notification(schedule)
         return {
             "schedule_name": schedule_name,
