@@ -39,6 +39,7 @@ Compact toolbar at the top of the window:
 - **Project** - Set project path | Refresh to rescan scripts
 - **Terminal** - Set Git Bash path
 - **Venv** - Set venv activate path for scripts that interact with Python | Clear venv path to revert to auto-detect
+- **Notification** - Dropdown to turn scheduler notifications **On** or **Off** (persisted in config). When On, a toast is shown for each scheduler-related event.
 - **Theme toggle** - Switch between dark and light themes (persisted across restarts)
 
 - **Page selector** - Switch between **Home** (script detail panel) and **Scheduler** (schedules and run history). The sidebar remains visible in both views.
@@ -123,6 +124,17 @@ A dedicated **Scheduler** page (via the Home | Scheduler selector) lets you run 
 - Logs are keyed by the same run id as in `scheduler_history.json` and persisted in `Scheduler/history_logs.json`; temporary capture files live in `Scheduler/logs/`.
 
 Schedules and run history are stored in the `Scheduler` folder: `Scheduler/schedules.json`, `Scheduler/scheduler_history.json`, `Scheduler/history_logs.json`. Run logs are written to `Scheduler/logs/`.
+
+### System notifications
+
+When notifications are enabled (Toolbar → **Notification** → **Scheduled: On**), the app shows a small toast in the bottom-right of the screen for scheduler events only:
+
+- **Scheduled run started** - The script process was started by the scheduler.
+- **Scheduled run finished** - The run exited on its own.
+- **Scheduled run killed** - The run was stopped (by you or by the scheduler before the next run).
+- **Scheduled run error** - The run failed to start (e.g. script not found, not under project path, or launch exception).
+
+Each toast shows the schedule name, script name, rule (e.g. interval and duration), and time until the next run. Toasts use the same theme as the app (dark or light), stay on top of other windows, auto-close after a few seconds, and can be closed early with the close button. Multiple toasts are shown one after another.
 
 ## How scripts are discovered
 

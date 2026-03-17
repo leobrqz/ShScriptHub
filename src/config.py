@@ -119,3 +119,18 @@ def toggle_favorite(script_path: str) -> bool:
     fav.add(script_path)
     save_favorites(fav)
     return True
+
+
+def load_scheduler_notification_enabled() -> bool:
+    """Returns True when scheduler system notifications are enabled."""
+    raw = _load_all().get("scheduler_notification_enabled")
+    if isinstance(raw, bool):
+        return raw
+    return False
+
+
+def save_scheduler_notification_enabled(enabled: bool) -> None:
+    """Persists the scheduler system notification enabled flag."""
+    data = _load_all()
+    data["scheduler_notification_enabled"] = bool(enabled)
+    _save_all(data)
