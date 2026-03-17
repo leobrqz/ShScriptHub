@@ -26,15 +26,19 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from datetime import datetime
+
 import utils
 from config import (
     load_favorites,
     load_project_path,
+    load_scheduler_notification_enabled,
     load_script_categories,
     load_terminal_path,
     load_theme,
     load_venv_activate_path,
     save_project_path,
+    save_scheduler_notification_enabled,
     save_script_category,
     save_terminal_path,
     save_theme,
@@ -48,17 +52,19 @@ from theme import DARK_PALETTE, LIGHT_PALETTE, get_stylesheet
 from utils import get_process_tree_after_spawn, kill_script_process, run_script_in_gitbash, run_script_in_gitbash_captured
 
 from scheduler_data import create_history_entry, now_iso
-from scheduler_engine import get_due_schedules, validate_trigger
+from scheduler_engine import get_due_schedules, get_next_run, validate_trigger
 from scheduler_storage import (
     append_history_entry,
     append_log,
     get_run_log_file_path,
+    load_history,
     load_schedules,
     replace_log,
     save_schedules,
     update_history_entry,
 )
 from scheduler_ui import SchedulerContentWidget
+from notifications import show_notification, update_notification_theme
 
 CATEGORY_OPTIONS = ("None", "backend", "frontend")
 CATEGORY_FILTER_OPTIONS = ("All", "Backend", "Frontend", "Running")
@@ -219,6 +225,56 @@ class ShScriptHubApp(QMainWindow):
     def _palette(self) -> dict:
         return DARK_PALETTE if self._theme == "dark" else LIGHT_PALETTE
 
+    def _format_next_run_for_notification(self, schedule: dict) -> str:
+        if not schedule.get("enabled", False):
+            return "—"
+        next_run = get_next_run(schedule)
+        if next_run is None:
+            return "—"
+        now = datetime.now(next_run.tzinfo) if next_run.tzinfo is not None else datetime.now()
+        delta = next_run - now
+        total_seconds = int(delta.total_seconds())
+        if schedule.get("rule_type") == "time":
+            return next_run.strftime("%H:%M %d/%m/%y")
+        if total_seconds <= 0:
+            return "in 0m"
+        hours = total_seconds // 3600
+        minutes = (total_seconds % 3600) // 60
+        if hours and minutes:
+            return f"in {hours}h {minutes}m"
+        if hours:
+            return f"in {hours}h"
+        return f"in {minutes}m"
+
+    def _build_notification_payload(
+        self,
+        schedule: dict,
+        script_name: Optional[str] = None,
+        error_message: Optional[str] = None,
+    ) -> dict:
+        schedule_name = schedule.get("name", "—")
+        script_path = schedule.get("script_path") or ""
+        if script_name is None:
+            script_name = os.path.basename(script_path) if script_path else "—"
+        rule_type = "Time" if schedule.get("rule_type") == "time" else "Interval"
+        next_run_text = self._format_next_run_for_notification(schedule)
+        return {
+            "schedule_name": schedule_name,
+            "script_name": script_name,
+            "rule_type": rule_type,
+            "next_run": next_run_text,
+            "error_message": error_message,
+        }
+
+    def _get_schedule_and_history_for_id(self, history_id: str) -> tuple[Optional[dict], Optional[dict]]:
+        runs = load_history()
+        history = next((r for r in runs if r.get("id") == history_id), None)
+        if history is None:
+            return None, None
+        schedules = load_schedules()
+        schedule = next((s for s in schedules if s.get("id") == history.get("schedule_id")), None)
+        return schedule, history
+
     def _build_top_bar(self) -> QWidget:
         bar = QWidget()
         bar.setObjectName("topBar")
@@ -264,6 +320,21 @@ class ShScriptHubApp(QMainWindow):
         )
         row.addWidget(venv_btn)
 
+        notification_btn = QPushButton("Notification")
+        notification_btn.setObjectName("topBarBtn")
+        notification_btn.clicked.connect(
+            lambda: self._show_button_menu(
+                notification_btn,
+                [
+                    (
+                        f"Scheduled: {'On' if load_scheduler_notification_enabled() else 'Off'}",
+                        self._toggle_scheduler_notifications,
+                    ),
+                ],
+            )
+        )
+        row.addWidget(notification_btn)
+
         row.addStretch()
 
         theme_label = "☀ Light" if self._theme == "dark" else "🌙 Dark"
@@ -273,6 +344,10 @@ class ShScriptHubApp(QMainWindow):
         row.addWidget(self._theme_btn)
 
         return bar
+
+    def _toggle_scheduler_notifications(self) -> None:
+        enabled = load_scheduler_notification_enabled()
+        save_scheduler_notification_enabled(not enabled)
 
     def _toggle_theme(self) -> None:
         self._theme = "light" if self._theme == "dark" else "dark"
@@ -284,6 +359,7 @@ class ShScriptHubApp(QMainWindow):
         if hasattr(self, "_scheduler_widget"):
             self._scheduler_widget.update_log_highlighter_palette(self._palette)
             self._scheduler_widget.refresh_current_view()
+        update_notification_theme(self._palette)
 
     def _build_paths_row(self) -> QWidget:
         row_widget = QWidget()
@@ -1045,6 +1121,18 @@ class ShScriptHubApp(QMainWindow):
             return
         history_id = row.get("scheduler_history_id")
         if history_id:
+            if load_scheduler_notification_enabled():
+                schedule, history = self._get_schedule_and_history_for_id(history_id)
+                if schedule:
+                    payload = self._build_notification_payload(schedule)
+                    show_notification(
+                        event_type="finished_killed",
+                        schedule_name=payload["schedule_name"],
+                        script_name=payload["script_name"],
+                        rule_type=payload["rule_type"],
+                        next_run=payload["next_run"],
+                        palette=self._palette,
+                    )
             update_history_entry(history_id, {
                 "status": "killed",
                 "finished_at": now_iso(),
@@ -1073,6 +1161,18 @@ class ShScriptHubApp(QMainWindow):
                 continue
             history_id = row.get("scheduler_history_id")
             if history_id:
+                if load_scheduler_notification_enabled():
+                    schedule, history = self._get_schedule_and_history_for_id(history_id)
+                    if schedule:
+                        payload = self._build_notification_payload(schedule)
+                        show_notification(
+                            event_type="finished_exited",
+                            schedule_name=payload["schedule_name"],
+                            script_name=payload["script_name"],
+                            rule_type=payload["rule_type"],
+                            next_run=payload["next_run"],
+                            palette=self._palette,
+                        )
                 update_history_entry(history_id, {
                     "status": "exited",
                     "finished_at": now_iso(),
@@ -1219,6 +1319,19 @@ class ShScriptHubApp(QMainWindow):
             )
             append_history_entry(entry)
             self._mark_schedule_triggered(schedule)
+            if load_scheduler_notification_enabled():
+                payload = self._build_notification_payload(schedule, error_message=error)
+                if not script_path:
+                    payload["script_name"] = error
+                show_notification(
+                    event_type="error",
+                    schedule_name=payload["schedule_name"],
+                    script_name=payload["script_name"],
+                    rule_type=payload["rule_type"],
+                    next_run=payload["next_run"],
+                    palette=self._palette,
+                    error_message=payload["error_message"],
+                )
             return
 
         row = self._get_row(script_path)
@@ -1226,6 +1339,18 @@ class ShScriptHubApp(QMainWindow):
         if row and self._is_row_running(row):
             history_id = row.get("scheduler_history_id")
             if history_id:
+                if load_scheduler_notification_enabled():
+                    schedule_row, history = self._get_schedule_and_history_for_id(history_id)
+                    if schedule_row:
+                        payload = self._build_notification_payload(schedule_row)
+                        show_notification(
+                            event_type="finished_killed",
+                            schedule_name=payload["schedule_name"],
+                            script_name=payload["script_name"],
+                            rule_type=payload["rule_type"],
+                            next_run=payload["next_run"],
+                            palette=self._palette,
+                        )
                 update_history_entry(history_id, {
                     "status": "killed",
                     "finished_at": now_iso(),
@@ -1290,6 +1415,16 @@ class ShScriptHubApp(QMainWindow):
 
             if script_path == self._selected_script_path:
                 self._render_detail_panel()
+            if load_scheduler_notification_enabled():
+                payload = self._build_notification_payload(schedule)
+                show_notification(
+                    event_type="start",
+                    schedule_name=payload["schedule_name"],
+                    script_name=payload["script_name"],
+                    rule_type=payload["rule_type"],
+                    next_run=payload["next_run"],
+                    palette=self._palette,
+                )
         except Exception as exc:
             update_history_entry(entry["id"], {
                 "status": "failed",
@@ -1297,6 +1432,17 @@ class ShScriptHubApp(QMainWindow):
                 "error_message": str(exc),
             })
             self._mark_schedule_triggered(schedule)
+            if load_scheduler_notification_enabled():
+                payload = self._build_notification_payload(schedule, error_message=str(exc))
+                show_notification(
+                    event_type="error",
+                    schedule_name=payload["schedule_name"],
+                    script_name=payload["script_name"],
+                    rule_type=payload["rule_type"],
+                    next_run=payload["next_run"],
+                    palette=self._palette,
+                    error_message=payload["error_message"],
+                )
 
     def _mark_schedule_triggered(self, schedule: dict) -> None:
         schedule["last_triggered_at"] = now_iso()

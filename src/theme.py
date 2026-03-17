@@ -518,4 +518,28 @@ QPushButton#historyLogCloseBtn:hover {{
 QPushButton#historyLogCloseBtn:pressed {{
     background-color: rgba(185, 28, 28, 0.2);
 }}
+QWidget#notificationToast {{
+    background-color: {p["bg_card"]};
+    border: 1px solid {p["border"]};
+    border-radius: 8px;
+}}
+QLabel#notificationTitle {{
+    color: {p["text_title"]};
+    font-weight: 600;
+}}
+QLabel#notificationBody {{
+    color: {p["text_primary"]};
+}}
+QLabel#notificationError {{
+    color: {p["kill_btn_bg"]};
+}}
+QPushButton#notificationCloseBtn {{
+    background-color: transparent;
+    border: none;
+    color: {p["text_muted"]};
+    padding: 0;
+}}
+QPushButton#notificationCloseBtn:hover {{
+    color: {p["text_primary"]};
+}}
 """
