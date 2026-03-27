@@ -65,6 +65,7 @@ from scheduler_storage import (
 )
 from scheduler_ui import SchedulerContentWidget
 from notifications import show_notification, update_notification_theme
+from manual_history_ui import ManualHistoryWidget
 
 CATEGORY_OPTIONS = ("None", "backend", "frontend")
 CATEGORY_FILTER_OPTIONS = ("All", "Backend", "Frontend", "Running")
@@ -454,12 +455,50 @@ class ShScriptHubApp(QMainWindow):
 
         return panel
 
+    def _switch_detail_tab(self, tab: str) -> None:
+        if tab == "details":
+            self._detail_stack.setCurrentIndex(0)
+            self._detail_nav_btn.setProperty("active", "true")
+            self._history_nav_btn.setProperty("active", "false")
+        else:
+            self._detail_stack.setCurrentIndex(1)
+            self._manual_history_widget.refresh_history()
+            self._detail_nav_btn.setProperty("active", "false")
+            self._history_nav_btn.setProperty("active", "true")
+        self._detail_nav_btn.style().unpolish(self._detail_nav_btn)
+        self._detail_nav_btn.style().polish(self._detail_nav_btn)
+        self._history_nav_btn.style().unpolish(self._history_nav_btn)
+        self._history_nav_btn.style().polish(self._history_nav_btn)
+
     def _build_detail_panel(self) -> QWidget:
         panel = QWidget()
         panel.setObjectName("detailPanel")
         root = QVBoxLayout(panel)
-        root.setContentsMargins(24, 16, 24, 16)
+        root.setContentsMargins(24, 4, 24, 16)
         root.setSpacing(12)
+
+        nav_row = QHBoxLayout()
+        nav_row.setSpacing(4)
+        self._detail_nav_btn = QPushButton("Details")
+        self._detail_nav_btn.setObjectName("pageSelectorBtn")
+        self._detail_nav_btn.clicked.connect(lambda: self._switch_detail_tab("details"))
+        
+        self._history_nav_btn = QPushButton("History")
+        self._history_nav_btn.setObjectName("pageSelectorBtn")
+        self._history_nav_btn.clicked.connect(lambda: self._switch_detail_tab("history"))
+        
+        nav_row.addWidget(self._detail_nav_btn)
+        nav_row.addWidget(self._history_nav_btn)
+        nav_row.addStretch()
+        root.addLayout(nav_row)
+
+        self._detail_stack = QStackedWidget()
+        root.addWidget(self._detail_stack, 1)
+
+        self._details_container = QWidget()
+        details_layout = QVBoxLayout(self._details_container)
+        details_layout.setContentsMargins(0, 0, 0, 0)
+        details_layout.setSpacing(12)
 
         self._detail_placeholder = QWidget()
         placeholder_layout = QVBoxLayout(self._detail_placeholder)
@@ -469,13 +508,19 @@ class ShScriptHubApp(QMainWindow):
         placeholder_lbl.setAlignment(Qt.AlignCenter)
         placeholder_layout.addWidget(placeholder_lbl)
         placeholder_layout.addStretch()
-        root.addWidget(self._detail_placeholder, 1)
+        details_layout.addWidget(self._detail_placeholder, 1)
 
         self._detail_content = QWidget()
         content = QVBoxLayout(self._detail_content)
         content.setContentsMargins(0, 0, 0, 0)
         content.setSpacing(8)
-        root.addWidget(self._detail_content, 1)
+        details_layout.addWidget(self._detail_content, 1)
+
+        self._manual_history_widget = ManualHistoryWidget(self)
+        self._detail_stack.addWidget(self._details_container)
+        self._detail_stack.addWidget(self._manual_history_widget)
+        
+        self._switch_detail_tab("details")
 
         self.detail_title = QLabel("")
         self.detail_title.setObjectName("detailTitle")
@@ -1090,18 +1135,42 @@ class ShScriptHubApp(QMainWindow):
     def _run_script_row(self, row: dict) -> None:
         try:
             category = self._get_category_for_script(row["script"]["path"])
-            proc = run_script_in_gitbash(
+            
+            entry = create_history_entry(
+                schedule_id="",
+                schedule_name="Manual Run",
+                script_path=row["script"]["path"],
+                triggered_at=now_iso(),
+                started_at=now_iso(),
+                status="started",
+            )
+            append_history_entry(entry)
+            append_log(entry["id"], "")
+            log_file_path = get_run_log_file_path(entry["id"])
+            
+            proc = run_script_in_gitbash_captured(
                 row["script"]["path"],
                 category,
                 self.project_path,
+                log_file_path=log_file_path,
                 terminal_path=self.terminal_path,
                 venv_activate_path=self.venv_activate_path,
             )
+            
+            poller = threading.Thread(
+                target=self._log_file_poll_thread,
+                args=(proc, entry["id"], log_file_path),
+                daemon=True,
+            )
+            poller.start()
+            
             row["process"] = proc
             row["kill_pids"] = None
             row["start_time"] = time.monotonic()
             row["peak_rss"] = 0.0
             row["cpu_primed_pids"] = set()
+            row["scheduler_history_id"] = entry["id"]
+            
             delay_ms = int(utils.TREE_CAPTURE_DELAY_SEC * 1000)
             QTimer.singleShot(delay_ms, lambda: self._capture_kill_pids(row))
             if row["script"]["path"] == self._selected_script_path:
@@ -1109,6 +1178,12 @@ class ShScriptHubApp(QMainWindow):
             self._refresh_sidebar_dots()
             QMessageBox.information(self, "ShScriptHub", f"Script '{row['script']['name']}' started.")
         except Exception as exc:
+            if 'entry' in locals():
+                update_history_entry(entry["id"], {
+                    "status": "failed",
+                    "started_at": None,
+                    "error_message": str(exc),
+                })
             QMessageBox.critical(self, "ShScriptHub - Error", str(exc))
 
     def _capture_kill_pids(self, row: dict) -> None:

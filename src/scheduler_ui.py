@@ -370,6 +370,8 @@ class SchedulerContentWidget(QWidget):
                 w.setParent(None)
 
         runs = load_history()
+        runs = [r for r in runs if r.get("schedule_id")]
+        
         distinct_schedule_names = sorted({r.get("schedule_name", "") or "—" for r in runs if r.get("schedule_name")})
         distinct_script_rel = []
         if self._main.project_path:
