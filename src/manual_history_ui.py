@@ -252,6 +252,7 @@ class ManualHistoryWidget(QWidget):
         script_path = run.get("script_path", "")
         rel = self._relative_script_path(script_path)
         script_lbl = QLabel(rel)
+        script_lbl.setAlignment(Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignLeft)
         grid.addWidget(script_lbl, 0, 0)
 
         def _fmt_ts(s):
@@ -272,6 +273,7 @@ class ManualHistoryWidget(QWidget):
             time_parts.append(f"Finished: {finished_str}")
         time_column_text = "\n".join(time_parts) if time_parts else "—"
         time_lbl = QLabel(time_column_text)
+        time_lbl.setAlignment(Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignLeft)
         grid.addWidget(time_lbl, 0, 1)
 
         status = run.get("status", "—")
@@ -279,13 +281,12 @@ class ManualHistoryWidget(QWidget):
         status_lbl = QLabel(status_display)
         status_lbl.setObjectName("historyStatusLabel")
         status_lbl.setProperty("status_type", status)
+        status_lbl.setAlignment(Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignLeft)
         grid.addWidget(status_lbl, 0, 2)
 
         sub_text = None
         if status == "failed":
             sub_text = run.get("error_message", "Unknown error")
-        elif status == "killed":
-            sub_text = "Terminated manually"
 
         sub_lbl = None
         if sub_text:
